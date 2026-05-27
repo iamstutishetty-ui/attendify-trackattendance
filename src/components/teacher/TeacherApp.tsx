@@ -579,7 +579,27 @@ function ProfileTab() {
 }
 
 /* helpers */
-function toISODate(d: Date) { return d.toISOString().slice(0, 10); }
+type MonthCell = { d: number; iso: string } | null;
+
+function toISODate(d: Date) {
+  const y = d.getFullYear(), m = String(d.getMonth() + 1).padStart(2, "0"), day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function monthCells(month: Date): MonthCell[] {
+  const y = month.getFullYear(), m = month.getMonth();
+  const first = new Date(y, m, 1).getDay();
+  const dim = new Date(y, m + 1, 0).getDate();
+  const cells: MonthCell[] = [];
+  for (let i = 0; i < first; i++) cells.push(null);
+  for (let d = 1; d <= dim; d++) cells.push({ d, iso: toISODate(new Date(y, m, d)) });
+  return cells;
+}
+
+function Legend({ color, label }: { color: string; label: string }) {
+  return <span className="flex items-center gap-1.5"><span className="h-3 w-3 rounded-sm" style={{ background: color }} />{label}</span>;
+}
+
 function EmptyState({ icon: Icon, title, text }: { icon: React.ElementType; title: string; text: string }) {
   return (
     <Card className="rounded-2xl p-8 text-center">
