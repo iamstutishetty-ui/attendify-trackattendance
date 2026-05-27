@@ -102,6 +102,13 @@ export function AdminApp() {
     (!semFilter || c.semester === semFilter) &&
     (!teacherFilter || c.teacher_name === teacherFilter));
 
+  const filteredAccounts = accounts.filter((a) =>
+    !query ||
+    a.full_name.toLowerCase().includes(query.toLowerCase()) ||
+    a.user_id_text.toLowerCase().includes(query.toLowerCase()) ||
+    a.role.toLowerCase().includes(query.toLowerCase()),
+  );
+
   const totals = {
     classes: classes.length,
     students: classes.reduce((s, c) => s + c.total_students, 0),
@@ -138,6 +145,31 @@ export function AdminApp() {
         {loading ? <Loader2 className="mx-auto mt-8 h-6 w-6 animate-spin text-muted-foreground" /> :
          filtered.length === 0 ? <Card className="rounded-2xl p-8 text-center text-sm text-muted-foreground">No classes found.</Card> :
          <div className="space-y-3">{filtered.map((c) => <AdminClassCard key={c.id} c={c} />)}</div>}
+
+        <Card className="rounded-2xl p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-bold">Accounts</p>
+            <span className="text-xs text-muted-foreground">{filteredAccounts.length}</span>
+          </div>
+          {accountsLoading ? <Loader2 className="mx-auto h-5 w-5 animate-spin text-muted-foreground" /> :
+           filteredAccounts.length === 0 ? <p className="py-4 text-center text-sm text-muted-foreground">No accounts found.</p> :
+           <div className="space-y-2">
+            {filteredAccounts.map((account) => (
+              <div key={account.id} className="flex items-center gap-3 rounded-2xl border bg-card p-3">
+                <div className="grid h-10 w-10 place-items-center rounded-full bg-primary/10 text-sm font-bold text-primary">
+                  {(account.full_name || account.user_id_text || "?")[0].toUpperCase()}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold">{account.full_name || account.user_id_text}</p>
+                  <p className="text-xs text-muted-foreground">@{account.user_id_text} · {account.role}</p>
+                </div>
+                <Button size="icon" variant="destructive" disabled={deletingId === account.id || account.id === user?.id} onClick={() => handleDeleteAccount(account)} className="rounded-full">
+                  {deletingId === account.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                </Button>
+              </div>
+            ))}
+           </div>}
+        </Card>
       </main>
     </div>
   );
