@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import {
   Layers, ClipboardCheck, CalendarDays, AlertTriangle, User as UserIcon, Plus,
   Copy, Archive, ArchiveRestore, Search, Loader2, Check, X, ArrowUpRight,
@@ -20,6 +20,8 @@ interface ClassRow {
   id: string; name: string; semester: string; academic_year: string;
   class_code: string; teacher_id: string; archived: boolean;
 }
+
+interface CalendarEventRow { id: string; date: string; type: string; title: string; }
 
 const tabs: { id: Tab; label: string; icon: React.ElementType }[] = [
   { id: "classes", label: "Classes", icon: Layers },
@@ -88,7 +90,7 @@ function ClassesTab({ onGoToAttendance }: { onGoToAttendance: () => void }) {
           <DialogTrigger asChild>
             <Button className="rounded-full"><Plus className="mr-1 h-4 w-4" />New</Button>
           </DialogTrigger>
-          <CreateClassDialog onCreated={() => { setOpen(false); load(); }} />
+          <CreateClassDialog onCreated={(created) => { setOpen(false); setShowArchived(false); setClasses((prev) => [created, ...prev.filter((c) => c.id !== created.id)]); load(); }} />
         </Dialog>
       </div>
 
@@ -180,7 +182,7 @@ function genCode() {
   return Math.random().toString(36).slice(2, 8).toUpperCase();
 }
 
-function CreateClassDialog({ onCreated }: { onCreated: () => void }) {
+function CreateClassDialog({ onCreated }: { onCreated: (created: ClassRow) => void }) {
   const { user } = useAuth();
   const [name, setName] = React.useState("");
   const [sem, setSem] = React.useState("");
@@ -191,16 +193,20 @@ function CreateClassDialog({ onCreated }: { onCreated: () => void }) {
     e.preventDefault();
     if (!name || !sem || !year) return toast.error("Fill all fields");
     setBusy(true);
-    const { error } = await supabase.from("classes").insert({
-      name, semester: sem, academic_year: year, class_code: genCode(), teacher_id: user!.id,
-    });
+    const classCode = genCode();
+    const { data, error } = await supabase.from("classes").insert({
+      name, semester: sem, academic_year: year, class_code: classCode, teacher_id: user!.id,
+    }).select("*").single();
     setBusy(false);
-    if (error) toast.error(error.message); else { toast.success("Class created"); onCreated(); }
+    if (error) toast.error(error.message); else { toast.success(`Class created · Code ${classCode}`); onCreated(data as ClassRow); }
   }
 
   return (
     <DialogContent className="rounded-3xl">
-      <DialogHeader><DialogTitle>New class</DialogTitle></DialogHeader>
+      <DialogHeader>
+        <DialogTitle>New class</DialogTitle>
+        <DialogDescription>Create a class and share its code with students.</DialogDescription>
+      </DialogHeader>
       <form onSubmit={submit} className="space-y-3">
         <div><Label>Class name</Label><Input value={name} onChange={(e) => setName(e.target.value)} placeholder="SY CSE A" className="rounded-xl h-11" /></div>
         <div className="grid grid-cols-2 gap-2">
@@ -223,6 +229,8 @@ function AttendanceTab() {
   const [date, setDate] = React.useState(new Date());
   const [students, setStudents] = React.useState<{ id: string; name: string; roll: string }[]>([]);
   const [statuses, setStatuses] = React.useState<Record<string, "present" | "absent">>({});
+  const [calendarEvents, setCalendarEvents] = React.useState<Record<string, string>>({});
+  const [month, setMonth] = React.useState(() => { const d = new Date(); d.setDate(1); return d; });
   const [query, setQuery] = React.useState("");
   const [saving, setSaving] = React.useState(false);
 
@@ -237,9 +245,10 @@ function AttendanceTab() {
 
   const loadData = React.useCallback(async () => {
     if (!activeClass) return;
-    const [{ data: enrolls }, { data: att }] = await Promise.all([
+    const [{ data: enrolls }, { data: att }, { data: events }] = await Promise.all([
       supabase.from("class_enrollments").select("student_id, roll_number, profiles!class_enrollments_student_id_fkey(full_name, user_id_text)").eq("class_id", activeClass),
       supabase.from("attendance_records").select("student_id, status").eq("class_id", activeClass).eq("date", toISODate(date)),
+      supabase.from("calendar_events").select("date, type").eq("class_id", activeClass),
     ]);
     const list = (enrolls as any[] ?? []).map((e) => ({
       id: e.student_id, name: e.profiles?.full_name || e.profiles?.user_id_text || "Student",
@@ -250,6 +259,7 @@ function AttendanceTab() {
     list.forEach((s) => { map[s.id] = "present"; }); // default present
     (att as any[] ?? []).forEach((a) => { map[a.student_id] = a.status; });
     setStatuses(map);
+    setCalendarEvents(Object.fromEntries((events as any[] ?? []).map((e) => [e.date, e.type])));
   }, [activeClass, date]);
 
   React.useEffect(() => { loadData(); }, [loadData]);
@@ -276,15 +286,7 @@ function AttendanceTab() {
     if (error) toast.error(error.message); else toast.success("Attendance saved");
   }
 
-  // 7-day strip
-  const days = React.useMemo(() => {
-    const today = new Date();
-    const arr: Date[] = [];
-    for (let i = 6; i >= 0; i--) {
-      const d = new Date(today); d.setDate(today.getDate() - i); arr.push(d);
-    }
-    return arr;
-  }, []);
+  const days = React.useMemo(() => monthCells(month), [month]);
 
   if (classes.length === 0) {
     return <EmptyState icon={ClipboardCheck} title="No active classes" text="Create a class first to mark attendance." />;
@@ -297,23 +299,28 @@ function AttendanceTab() {
         {classes.map((c) => <option key={c.id} value={c.id}>{c.name} — Sem {c.semester}</option>)}
       </select>
 
-      <div className="flex items-center justify-between">
-        <button onClick={() => setDate(new Date())} className="rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">Today</button>
-        <p className="text-xs text-muted-foreground">{date.toDateString()}</p>
-      </div>
-
-      <div className="flex gap-2 overflow-x-auto pb-1">
-        {days.map((d) => {
-          const sel = toISODate(d) === toISODate(date);
-          return (
-            <button key={d.toISOString()} onClick={() => setDate(d)}
-              className={`flex min-w-14 flex-col items-center rounded-2xl px-3 py-2 transition ${sel ? "blue-gradient text-white shadow-lg" : "bg-card border"}`}>
-              <span className="text-[10px] uppercase opacity-80">{d.toLocaleDateString("en", { weekday: "short" })}</span>
-              <span className="text-lg font-bold">{d.getDate()}</span>
-            </button>
-          );
-        })}
-      </div>
+      <Card className="rounded-3xl p-4">
+        <div className="flex items-center justify-between">
+          <button onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))} className="rounded-full bg-secondary px-3 py-1 text-sm">‹</button>
+          <div className="text-center">
+            <p className="font-bold">{month.toLocaleDateString("en", { month: "long", year: "numeric" })}</p>
+            <p className="text-xs text-muted-foreground">Selected: {date.toDateString()}</p>
+          </div>
+          <button onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))} className="rounded-full bg-secondary px-3 py-1 text-sm">›</button>
+        </div>
+        <div className="mt-3 grid grid-cols-7 gap-1 text-center text-[10px] text-muted-foreground">
+          {["S","M","T","W","T","F","S"].map((d, i) => <div key={i}>{d}</div>)}
+        </div>
+        <div className="mt-1 grid grid-cols-7 gap-1">
+          {days.map((cell, i) => {
+            if (!cell) return <div key={i} />;
+            const sel = cell.iso === toISODate(date);
+            const type = calendarEvents[cell.iso];
+            const cls = type === "working" ? "bg-success/20 text-success" : type === "non_working" ? "bg-destructive/15 text-destructive" : sel ? "blue-gradient text-white" : "bg-secondary text-foreground/70";
+            return <button key={cell.iso} onClick={() => setDate(new Date(cell.iso))} className={`aspect-square rounded-xl text-xs font-bold transition ${cls} ${sel ? "ring-2 ring-primary ring-offset-2 ring-offset-background" : ""}`}>{cell.d}</button>;
+          })}
+        </div>
+      </Card>
 
       <div className="grid grid-cols-2 gap-2">
         <Card className="rounded-2xl p-3" style={{ background: "oklch(0.95 0.08 145)" }}>
@@ -367,10 +374,9 @@ function CalendarTab() {
   const { user } = useAuth();
   const [classes, setClasses] = React.useState<ClassRow[]>([]);
   const [activeClass, setActiveClass] = React.useState<string>("");
-  const [events, setEvents] = React.useState<{ id: string; date: string; type: string; title: string }[]>([]);
-  const [date, setDate] = React.useState(toISODate(new Date()));
-  const [type, setType] = React.useState<"holiday" | "exam" | "event">("holiday");
-  const [title, setTitle] = React.useState("");
+  const [events, setEvents] = React.useState<CalendarEventRow[]>([]);
+  const [month, setMonth] = React.useState(() => { const d = new Date(); d.setDate(1); return d; });
+  const clickTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   React.useEffect(() => {
     supabase.from("classes").select("*").eq("teacher_id", user!.id).eq("archived", false).then(({ data }) => {
@@ -386,10 +392,21 @@ function CalendarTab() {
   }, [activeClass]);
   React.useEffect(() => { load(); }, [load]);
 
-  async function add() {
+  async function markDate(date: string, type: "working" | "non_working") {
     if (!activeClass) return;
-    const { error } = await supabase.from("calendar_events").insert({ class_id: activeClass, date, type, title });
-    if (error) toast.error(error.message); else { setTitle(""); load(); toast.success("Added"); }
+    const { error } = await supabase.from("calendar_events").upsert(
+      { class_id: activeClass, date, type, title: type === "working" ? "Working day" : "Non-working day" },
+      { onConflict: "class_id,date" },
+    );
+    if (error) toast.error(error.message); else { toast.success(type === "working" ? "Marked working day" : "Marked non-working day"); load(); }
+  }
+  function handleDateClick(date: string) {
+    if (clickTimer.current) clearTimeout(clickTimer.current);
+    clickTimer.current = setTimeout(() => markDate(date, "working"), 220);
+  }
+  function handleDateDoubleClick(date: string) {
+    if (clickTimer.current) clearTimeout(clickTimer.current);
+    markDate(date, "non_working");
   }
   async function remove(id: string) {
     await supabase.from("calendar_events").delete().eq("id", id); load();
@@ -397,7 +414,9 @@ function CalendarTab() {
 
   if (classes.length === 0) return <EmptyState icon={CalendarDays} title="No active classes" text="Create a class first." />;
 
-  const colorOf = (t: string) => t === "holiday" ? "bg-[oklch(0.95_0.15_85)] text-[oklch(0.45_0.15_85)]" : t === "exam" ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground";
+  const eventMap = Object.fromEntries(events.map((e) => [e.date, e]));
+  const days = monthCells(month);
+  const colorOf = (t: string) => t === "working" ? "bg-success/20 text-success" : t === "non_working" ? "bg-destructive/15 text-destructive" : "bg-muted text-muted-foreground";
 
   return (
     <section className="space-y-4">
@@ -405,14 +424,26 @@ function CalendarTab() {
         {classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
       </select>
 
-      <Card className="rounded-2xl p-4 space-y-3">
-        <p className="text-sm font-bold">Add event</p>
-        <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="h-11 rounded-xl" />
-        <select value={type} onChange={(e) => setType(e.target.value as any)} className="h-11 w-full rounded-xl border border-input bg-background px-3 text-sm">
-          <option value="holiday">Holiday</option><option value="exam">Exam</option><option value="event">Event</option>
-        </select>
-        <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Title (optional)" className="h-11 rounded-xl" />
-        <Button onClick={add} className="h-11 w-full rounded-xl"><Plus className="mr-1 h-4 w-4" />Add</Button>
+      <Card className="rounded-3xl p-4">
+        <div className="flex items-center justify-between">
+          <button onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))} className="rounded-full bg-secondary px-3 py-1 text-sm">‹</button>
+          <p className="font-bold">{month.toLocaleDateString("en", { month: "long", year: "numeric" })}</p>
+          <button onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))} className="rounded-full bg-secondary px-3 py-1 text-sm">›</button>
+        </div>
+        <div className="mt-3 grid grid-cols-7 gap-1 text-center text-[10px] text-muted-foreground">
+          {["S","M","T","W","T","F","S"].map((d, i) => <div key={i}>{d}</div>)}
+        </div>
+        <div className="mt-1 grid grid-cols-7 gap-1">
+          {days.map((cell, i) => {
+            if (!cell) return <div key={i} />;
+            const event = eventMap[cell.iso];
+            return <button key={cell.iso} onClick={() => handleDateClick(cell.iso)} onDoubleClick={() => handleDateDoubleClick(cell.iso)} className={`aspect-square rounded-xl text-xs font-bold transition ${event ? colorOf(event.type) : "bg-secondary text-foreground/70"}`}>{cell.d}</button>;
+          })}
+        </div>
+        <div className="mt-3 flex flex-wrap gap-3 text-[11px]">
+          <Legend color="var(--success)" label="Working day" />
+          <Legend color="var(--destructive)" label="Non-working day" />
+        </div>
       </Card>
 
       <div className="space-y-2">
@@ -548,7 +579,27 @@ function ProfileTab() {
 }
 
 /* helpers */
-function toISODate(d: Date) { return d.toISOString().slice(0, 10); }
+type MonthCell = { d: number; iso: string } | null;
+
+function toISODate(d: Date) {
+  const y = d.getFullYear(), m = String(d.getMonth() + 1).padStart(2, "0"), day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function monthCells(month: Date): MonthCell[] {
+  const y = month.getFullYear(), m = month.getMonth();
+  const first = new Date(y, m, 1).getDay();
+  const dim = new Date(y, m + 1, 0).getDate();
+  const cells: MonthCell[] = [];
+  for (let i = 0; i < first; i++) cells.push(null);
+  for (let d = 1; d <= dim; d++) cells.push({ d, iso: toISODate(new Date(y, m, d)) });
+  return cells;
+}
+
+function Legend({ color, label }: { color: string; label: string }) {
+  return <span className="flex items-center gap-1.5"><span className="h-3 w-3 rounded-sm" style={{ background: color }} />{label}</span>;
+}
+
 function EmptyState({ icon: Icon, title, text }: { icon: React.ElementType; title: string; text: string }) {
   return (
     <Card className="rounded-2xl p-8 text-center">

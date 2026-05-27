@@ -1,22 +1,45 @@
 import * as React from "react";
+import { useServerFn } from "@tanstack/react-start";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/lib/auth-context";
+import { deleteAccount } from "@/lib/accounts.functions";
 import { AppHeader } from "@/components/AppHeader";
 import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Loader2, Search, Users, BookOpen, BarChart3 } from "lucide-react";
+import { Loader2, Search, Users, BookOpen, BarChart3, Trash2 } from "lucide-react";
+import { toast } from "sonner";
 
 interface ClassStat {
   id: string; name: string; semester: string; teacher_name: string;
   total_students: number; present: number; absent: number; pct: number;
 }
 
+interface AccountRow { id: string; user_id_text: string; full_name: string; role: string; }
+
 export function AdminApp() {
+  const { user } = useAuth();
+  const removeAccount = useServerFn(deleteAccount);
   const [classes, setClasses] = React.useState<ClassStat[]>([]);
+  const [accounts, setAccounts] = React.useState<AccountRow[]>([]);
   const [loading, setLoading] = React.useState(true);
+  const [accountsLoading, setAccountsLoading] = React.useState(true);
+  const [deletingId, setDeletingId] = React.useState<string | null>(null);
   const [date, setDate] = React.useState(new Date().toISOString().slice(0, 10));
   const [query, setQuery] = React.useState("");
   const [semFilter, setSemFilter] = React.useState("");
   const [teacherFilter, setTeacherFilter] = React.useState("");
+
+  const loadAccounts = React.useCallback(async () => {
+    setAccountsLoading(true);
+    const [{ data: profiles }, { data: roles }] = await Promise.all([
+      supabase.from("profiles").select("id, user_id_text, full_name").order("created_at", { ascending: false }),
+      supabase.from("user_roles").select("user_id, role"),
+    ]);
+    const roleMap = new Map((roles as any[] ?? []).map((r) => [r.user_id, r.role]));
+    setAccounts((profiles as any[] ?? []).map((p) => ({ ...p, role: roleMap.get(p.id) ?? "user" })));
+    setAccountsLoading(false);
+  }, []);
 
   React.useEffect(() => {
     (async () => {
@@ -54,6 +77,23 @@ export function AdminApp() {
     })();
   }, [date]);
 
+  React.useEffect(() => { loadAccounts(); }, [loadAccounts]);
+
+  async function handleDeleteAccount(account: AccountRow) {
+    if (account.id === user?.id) return toast.error("You cannot delete your own admin account here.");
+    if (!window.confirm(`Delete ${account.full_name || account.user_id_text}'s account?`)) return;
+    setDeletingId(account.id);
+    try {
+      await removeAccount({ data: { userId: account.id } });
+      toast.success("Account deleted");
+      loadAccounts();
+    } catch (err: any) {
+      toast.error(err.message || "Could not delete account");
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
   const semesters = [...new Set(classes.map((c) => c.semester))].sort();
   const teachers = [...new Set(classes.map((c) => c.teacher_name))].sort();
 
@@ -61,6 +101,13 @@ export function AdminApp() {
     (!query || c.name.toLowerCase().includes(query.toLowerCase())) &&
     (!semFilter || c.semester === semFilter) &&
     (!teacherFilter || c.teacher_name === teacherFilter));
+
+  const filteredAccounts = accounts.filter((a) =>
+    !query ||
+    a.full_name.toLowerCase().includes(query.toLowerCase()) ||
+    a.user_id_text.toLowerCase().includes(query.toLowerCase()) ||
+    a.role.toLowerCase().includes(query.toLowerCase()),
+  );
 
   const totals = {
     classes: classes.length,
@@ -98,6 +145,31 @@ export function AdminApp() {
         {loading ? <Loader2 className="mx-auto mt-8 h-6 w-6 animate-spin text-muted-foreground" /> :
          filtered.length === 0 ? <Card className="rounded-2xl p-8 text-center text-sm text-muted-foreground">No classes found.</Card> :
          <div className="space-y-3">{filtered.map((c) => <AdminClassCard key={c.id} c={c} />)}</div>}
+
+        <Card className="rounded-2xl p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-bold">Accounts</p>
+            <span className="text-xs text-muted-foreground">{filteredAccounts.length}</span>
+          </div>
+          {accountsLoading ? <Loader2 className="mx-auto h-5 w-5 animate-spin text-muted-foreground" /> :
+           filteredAccounts.length === 0 ? <p className="py-4 text-center text-sm text-muted-foreground">No accounts found.</p> :
+           <div className="space-y-2">
+            {filteredAccounts.map((account) => (
+              <div key={account.id} className="flex items-center gap-3 rounded-2xl border bg-card p-3">
+                <div className="grid h-10 w-10 place-items-center rounded-full bg-primary/10 text-sm font-bold text-primary">
+                  {(account.full_name || account.user_id_text || "?")[0].toUpperCase()}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold">{account.full_name || account.user_id_text}</p>
+                  <p className="text-xs text-muted-foreground">@{account.user_id_text} · {account.role}</p>
+                </div>
+                <Button size="icon" variant="destructive" disabled={deletingId === account.id || account.id === user?.id} onClick={() => handleDeleteAccount(account)} className="rounded-full">
+                  {deletingId === account.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                </Button>
+              </div>
+            ))}
+           </div>}
+        </Card>
       </main>
     </div>
   );
