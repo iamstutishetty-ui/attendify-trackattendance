@@ -229,6 +229,8 @@ function AttendanceTab() {
   const [date, setDate] = React.useState(new Date());
   const [students, setStudents] = React.useState<{ id: string; name: string; roll: string }[]>([]);
   const [statuses, setStatuses] = React.useState<Record<string, "present" | "absent">>({});
+  const [calendarEvents, setCalendarEvents] = React.useState<Record<string, string>>({});
+  const [month, setMonth] = React.useState(() => { const d = new Date(); d.setDate(1); return d; });
   const [query, setQuery] = React.useState("");
   const [saving, setSaving] = React.useState(false);
 
@@ -243,9 +245,10 @@ function AttendanceTab() {
 
   const loadData = React.useCallback(async () => {
     if (!activeClass) return;
-    const [{ data: enrolls }, { data: att }] = await Promise.all([
+    const [{ data: enrolls }, { data: att }, { data: events }] = await Promise.all([
       supabase.from("class_enrollments").select("student_id, roll_number, profiles!class_enrollments_student_id_fkey(full_name, user_id_text)").eq("class_id", activeClass),
       supabase.from("attendance_records").select("student_id, status").eq("class_id", activeClass).eq("date", toISODate(date)),
+      supabase.from("calendar_events").select("date, type").eq("class_id", activeClass),
     ]);
     const list = (enrolls as any[] ?? []).map((e) => ({
       id: e.student_id, name: e.profiles?.full_name || e.profiles?.user_id_text || "Student",
@@ -256,6 +259,7 @@ function AttendanceTab() {
     list.forEach((s) => { map[s.id] = "present"; }); // default present
     (att as any[] ?? []).forEach((a) => { map[a.student_id] = a.status; });
     setStatuses(map);
+    setCalendarEvents(Object.fromEntries((events as any[] ?? []).map((e) => [e.date, e.type])));
   }, [activeClass, date]);
 
   React.useEffect(() => { loadData(); }, [loadData]);
@@ -282,15 +286,7 @@ function AttendanceTab() {
     if (error) toast.error(error.message); else toast.success("Attendance saved");
   }
 
-  // 7-day strip
-  const days = React.useMemo(() => {
-    const today = new Date();
-    const arr: Date[] = [];
-    for (let i = 6; i >= 0; i--) {
-      const d = new Date(today); d.setDate(today.getDate() - i); arr.push(d);
-    }
-    return arr;
-  }, []);
+  const days = React.useMemo(() => monthCells(month), [month]);
 
   if (classes.length === 0) {
     return <EmptyState icon={ClipboardCheck} title="No active classes" text="Create a class first to mark attendance." />;
@@ -303,23 +299,28 @@ function AttendanceTab() {
         {classes.map((c) => <option key={c.id} value={c.id}>{c.name} — Sem {c.semester}</option>)}
       </select>
 
-      <div className="flex items-center justify-between">
-        <button onClick={() => setDate(new Date())} className="rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">Today</button>
-        <p className="text-xs text-muted-foreground">{date.toDateString()}</p>
-      </div>
-
-      <div className="flex gap-2 overflow-x-auto pb-1">
-        {days.map((d) => {
-          const sel = toISODate(d) === toISODate(date);
-          return (
-            <button key={d.toISOString()} onClick={() => setDate(d)}
-              className={`flex min-w-14 flex-col items-center rounded-2xl px-3 py-2 transition ${sel ? "blue-gradient text-white shadow-lg" : "bg-card border"}`}>
-              <span className="text-[10px] uppercase opacity-80">{d.toLocaleDateString("en", { weekday: "short" })}</span>
-              <span className="text-lg font-bold">{d.getDate()}</span>
-            </button>
-          );
-        })}
-      </div>
+      <Card className="rounded-3xl p-4">
+        <div className="flex items-center justify-between">
+          <button onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))} className="rounded-full bg-secondary px-3 py-1 text-sm">‹</button>
+          <div className="text-center">
+            <p className="font-bold">{month.toLocaleDateString("en", { month: "long", year: "numeric" })}</p>
+            <p className="text-xs text-muted-foreground">Selected: {date.toDateString()}</p>
+          </div>
+          <button onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))} className="rounded-full bg-secondary px-3 py-1 text-sm">›</button>
+        </div>
+        <div className="mt-3 grid grid-cols-7 gap-1 text-center text-[10px] text-muted-foreground">
+          {["S","M","T","W","T","F","S"].map((d, i) => <div key={i}>{d}</div>)}
+        </div>
+        <div className="mt-1 grid grid-cols-7 gap-1">
+          {days.map((cell, i) => {
+            if (!cell) return <div key={i} />;
+            const sel = cell.iso === toISODate(date);
+            const type = calendarEvents[cell.iso];
+            const cls = type === "working" ? "bg-success/20 text-success" : type === "non_working" ? "bg-destructive/15 text-destructive" : sel ? "blue-gradient text-white" : "bg-secondary text-foreground/70";
+            return <button key={cell.iso} onClick={() => setDate(new Date(cell.iso))} className={`aspect-square rounded-xl text-xs font-bold transition ${cls} ${sel ? "ring-2 ring-primary ring-offset-2 ring-offset-background" : ""}`}>{cell.d}</button>;
+          })}
+        </div>
+      </Card>
 
       <div className="grid grid-cols-2 gap-2">
         <Card className="rounded-2xl p-3" style={{ background: "oklch(0.95 0.08 145)" }}>
