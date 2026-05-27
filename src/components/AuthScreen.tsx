@@ -1,6 +1,6 @@
 import * as React from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { idToEmail, type AppRole } from "@/lib/auth-context";
+import { idToEmail, useAuth, type AppRole } from "@/lib/auth-context";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -20,6 +20,7 @@ export function AuthScreen() {
   const [fullName, setFullName] = React.useState("");
   const [password, setPassword] = React.useState("");
   const [busy, setBusy] = React.useState(false);
+  const { refresh } = useAuth();
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -48,6 +49,7 @@ export function AuthScreen() {
           const { error: rErr } = await supabase.from("user_roles").insert({ user_id: uid, role });
           if (rErr && !rErr.message.includes("duplicate")) throw rErr;
         }
+        await refresh();
         toast.success("Account created");
       } else {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
