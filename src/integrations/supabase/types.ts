@@ -216,6 +216,10 @@ export type Database = {
         }
         Returns: boolean
       }
+      is_enrolled: {
+        Args: { _class_id: string; _user_id: string }
+        Returns: boolean
+      }
     }
     Enums: {
       app_role: "admin" | "teacher" | "student"
