@@ -1,22 +1,45 @@
 import * as React from "react";
+import { useServerFn } from "@tanstack/react-start";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/lib/auth-context";
+import { deleteAccount } from "@/lib/accounts.functions";
 import { AppHeader } from "@/components/AppHeader";
 import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Loader2, Search, Users, BookOpen, BarChart3 } from "lucide-react";
+import { Loader2, Search, Users, BookOpen, BarChart3, Trash2 } from "lucide-react";
+import { toast } from "sonner";
 
 interface ClassStat {
   id: string; name: string; semester: string; teacher_name: string;
   total_students: number; present: number; absent: number; pct: number;
 }
 
+interface AccountRow { id: string; user_id_text: string; full_name: string; role: string; }
+
 export function AdminApp() {
+  const { user } = useAuth();
+  const removeAccount = useServerFn(deleteAccount);
   const [classes, setClasses] = React.useState<ClassStat[]>([]);
+  const [accounts, setAccounts] = React.useState<AccountRow[]>([]);
   const [loading, setLoading] = React.useState(true);
+  const [accountsLoading, setAccountsLoading] = React.useState(true);
+  const [deletingId, setDeletingId] = React.useState<string | null>(null);
   const [date, setDate] = React.useState(new Date().toISOString().slice(0, 10));
   const [query, setQuery] = React.useState("");
   const [semFilter, setSemFilter] = React.useState("");
   const [teacherFilter, setTeacherFilter] = React.useState("");
+
+  const loadAccounts = React.useCallback(async () => {
+    setAccountsLoading(true);
+    const [{ data: profiles }, { data: roles }] = await Promise.all([
+      supabase.from("profiles").select("id, user_id_text, full_name").order("created_at", { ascending: false }),
+      supabase.from("user_roles").select("user_id, role"),
+    ]);
+    const roleMap = new Map((roles as any[] ?? []).map((r) => [r.user_id, r.role]));
+    setAccounts((profiles as any[] ?? []).map((p) => ({ ...p, role: roleMap.get(p.id) ?? "user" })));
+    setAccountsLoading(false);
+  }, []);
 
   React.useEffect(() => {
     (async () => {
@@ -53,6 +76,23 @@ export function AdminApp() {
       setClasses(result); setLoading(false);
     })();
   }, [date]);
+
+  React.useEffect(() => { loadAccounts(); }, [loadAccounts]);
+
+  async function handleDeleteAccount(account: AccountRow) {
+    if (account.id === user?.id) return toast.error("You cannot delete your own admin account here.");
+    if (!window.confirm(`Delete ${account.full_name || account.user_id_text}'s account?`)) return;
+    setDeletingId(account.id);
+    try {
+      await removeAccount({ data: { userId: account.id } });
+      toast.success("Account deleted");
+      loadAccounts();
+    } catch (err: any) {
+      toast.error(err.message || "Could not delete account");
+    } finally {
+      setDeletingId(null);
+    }
+  }
 
   const semesters = [...new Set(classes.map((c) => c.semester))].sort();
   const teachers = [...new Set(classes.map((c) => c.teacher_name))].sort();
