@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import {
   Layers, ClipboardCheck, CalendarDays, AlertTriangle, User as UserIcon, Plus,
   Copy, Archive, ArchiveRestore, Search, Loader2, Check, X, ArrowUpRight,
@@ -20,6 +20,8 @@ interface ClassRow {
   id: string; name: string; semester: string; academic_year: string;
   class_code: string; teacher_id: string; archived: boolean;
 }
+
+interface CalendarEventRow { id: string; date: string; type: string; title: string; }
 
 const tabs: { id: Tab; label: string; icon: React.ElementType }[] = [
   { id: "classes", label: "Classes", icon: Layers },
@@ -88,7 +90,7 @@ function ClassesTab({ onGoToAttendance }: { onGoToAttendance: () => void }) {
           <DialogTrigger asChild>
             <Button className="rounded-full"><Plus className="mr-1 h-4 w-4" />New</Button>
           </DialogTrigger>
-          <CreateClassDialog onCreated={() => { setOpen(false); load(); }} />
+          <CreateClassDialog onCreated={(created) => { setOpen(false); setShowArchived(false); setClasses((prev) => [created, ...prev.filter((c) => c.id !== created.id)]); load(); }} />
         </Dialog>
       </div>
 
@@ -180,7 +182,7 @@ function genCode() {
   return Math.random().toString(36).slice(2, 8).toUpperCase();
 }
 
-function CreateClassDialog({ onCreated }: { onCreated: () => void }) {
+function CreateClassDialog({ onCreated }: { onCreated: (created: ClassRow) => void }) {
   const { user } = useAuth();
   const [name, setName] = React.useState("");
   const [sem, setSem] = React.useState("");
@@ -191,16 +193,20 @@ function CreateClassDialog({ onCreated }: { onCreated: () => void }) {
     e.preventDefault();
     if (!name || !sem || !year) return toast.error("Fill all fields");
     setBusy(true);
-    const { error } = await supabase.from("classes").insert({
-      name, semester: sem, academic_year: year, class_code: genCode(), teacher_id: user!.id,
-    });
+    const classCode = genCode();
+    const { data, error } = await supabase.from("classes").insert({
+      name, semester: sem, academic_year: year, class_code: classCode, teacher_id: user!.id,
+    }).select("*").single();
     setBusy(false);
-    if (error) toast.error(error.message); else { toast.success("Class created"); onCreated(); }
+    if (error) toast.error(error.message); else { toast.success(`Class created · Code ${classCode}`); onCreated(data as ClassRow); }
   }
 
   return (
     <DialogContent className="rounded-3xl">
-      <DialogHeader><DialogTitle>New class</DialogTitle></DialogHeader>
+      <DialogHeader>
+        <DialogTitle>New class</DialogTitle>
+        <DialogDescription>Create a class and share its code with students.</DialogDescription>
+      </DialogHeader>
       <form onSubmit={submit} className="space-y-3">
         <div><Label>Class name</Label><Input value={name} onChange={(e) => setName(e.target.value)} placeholder="SY CSE A" className="rounded-xl h-11" /></div>
         <div className="grid grid-cols-2 gap-2">
