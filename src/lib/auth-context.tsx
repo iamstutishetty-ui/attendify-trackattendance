@@ -40,6 +40,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     ]);
     setProfile(prof ?? null);
     setRole((roleRow?.role as AppRole) ?? null);
+    return { profile: prof ?? null, role: (roleRow?.role as AppRole) ?? null };
   }, []);
 
   React.useEffect(() => {
@@ -47,10 +48,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setSession(s);
       setUser(s?.user ?? null);
       if (s?.user) {
-        setTimeout(() => { loadProfile(s.user.id); }, 0);
+        setLoading(true);
+        setTimeout(() => { loadProfile(s.user.id).finally(() => setLoading(false)); }, 0);
       } else {
         setProfile(null);
         setRole(null);
+        setLoading(false);
       }
     });
     supabase.auth.getSession().then(({ data: { session: s } }) => {
@@ -63,7 +66,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [loadProfile]);
 
   const refresh = React.useCallback(async () => {
-    if (user) await loadProfile(user.id);
+    setLoading(true);
+    const { data: { session: currentSession } } = await supabase.auth.getSession();
+    const currentUser = currentSession?.user ?? user;
+    setSession(currentSession ?? null);
+    setUser(currentUser ?? null);
+    if (currentUser) await loadProfile(currentUser.id);
+    else { setProfile(null); setRole(null); }
+    setLoading(false);
   }, [user, loadProfile]);
 
   const signOut = React.useCallback(async () => {
