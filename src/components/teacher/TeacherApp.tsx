@@ -374,10 +374,9 @@ function CalendarTab() {
   const { user } = useAuth();
   const [classes, setClasses] = React.useState<ClassRow[]>([]);
   const [activeClass, setActiveClass] = React.useState<string>("");
-  const [events, setEvents] = React.useState<{ id: string; date: string; type: string; title: string }[]>([]);
-  const [date, setDate] = React.useState(toISODate(new Date()));
-  const [type, setType] = React.useState<"holiday" | "exam" | "event">("holiday");
-  const [title, setTitle] = React.useState("");
+  const [events, setEvents] = React.useState<CalendarEventRow[]>([]);
+  const [month, setMonth] = React.useState(() => { const d = new Date(); d.setDate(1); return d; });
+  const clickTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   React.useEffect(() => {
     supabase.from("classes").select("*").eq("teacher_id", user!.id).eq("archived", false).then(({ data }) => {
@@ -393,10 +392,21 @@ function CalendarTab() {
   }, [activeClass]);
   React.useEffect(() => { load(); }, [load]);
 
-  async function add() {
+  async function markDate(date: string, type: "working" | "non_working") {
     if (!activeClass) return;
-    const { error } = await supabase.from("calendar_events").insert({ class_id: activeClass, date, type, title });
-    if (error) toast.error(error.message); else { setTitle(""); load(); toast.success("Added"); }
+    const { error } = await supabase.from("calendar_events").upsert(
+      { class_id: activeClass, date, type, title: type === "working" ? "Working day" : "Non-working day" },
+      { onConflict: "class_id,date" },
+    );
+    if (error) toast.error(error.message); else { toast.success(type === "working" ? "Marked working day" : "Marked non-working day"); load(); }
+  }
+  function handleDateClick(date: string) {
+    if (clickTimer.current) clearTimeout(clickTimer.current);
+    clickTimer.current = setTimeout(() => markDate(date, "working"), 220);
+  }
+  function handleDateDoubleClick(date: string) {
+    if (clickTimer.current) clearTimeout(clickTimer.current);
+    markDate(date, "non_working");
   }
   async function remove(id: string) {
     await supabase.from("calendar_events").delete().eq("id", id); load();
@@ -404,7 +414,9 @@ function CalendarTab() {
 
   if (classes.length === 0) return <EmptyState icon={CalendarDays} title="No active classes" text="Create a class first." />;
 
-  const colorOf = (t: string) => t === "holiday" ? "bg-[oklch(0.95_0.15_85)] text-[oklch(0.45_0.15_85)]" : t === "exam" ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground";
+  const eventMap = Object.fromEntries(events.map((e) => [e.date, e]));
+  const days = monthCells(month);
+  const colorOf = (t: string) => t === "working" ? "bg-success/20 text-success" : t === "non_working" ? "bg-destructive/15 text-destructive" : "bg-muted text-muted-foreground";
 
   return (
     <section className="space-y-4">
@@ -412,14 +424,26 @@ function CalendarTab() {
         {classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
       </select>
 
-      <Card className="rounded-2xl p-4 space-y-3">
-        <p className="text-sm font-bold">Add event</p>
-        <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="h-11 rounded-xl" />
-        <select value={type} onChange={(e) => setType(e.target.value as any)} className="h-11 w-full rounded-xl border border-input bg-background px-3 text-sm">
-          <option value="holiday">Holiday</option><option value="exam">Exam</option><option value="event">Event</option>
-        </select>
-        <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Title (optional)" className="h-11 rounded-xl" />
-        <Button onClick={add} className="h-11 w-full rounded-xl"><Plus className="mr-1 h-4 w-4" />Add</Button>
+      <Card className="rounded-3xl p-4">
+        <div className="flex items-center justify-between">
+          <button onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))} className="rounded-full bg-secondary px-3 py-1 text-sm">‹</button>
+          <p className="font-bold">{month.toLocaleDateString("en", { month: "long", year: "numeric" })}</p>
+          <button onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))} className="rounded-full bg-secondary px-3 py-1 text-sm">›</button>
+        </div>
+        <div className="mt-3 grid grid-cols-7 gap-1 text-center text-[10px] text-muted-foreground">
+          {["S","M","T","W","T","F","S"].map((d, i) => <div key={i}>{d}</div>)}
+        </div>
+        <div className="mt-1 grid grid-cols-7 gap-1">
+          {days.map((cell, i) => {
+            if (!cell) return <div key={i} />;
+            const event = eventMap[cell.iso];
+            return <button key={cell.iso} onClick={() => handleDateClick(cell.iso)} onDoubleClick={() => handleDateDoubleClick(cell.iso)} className={`aspect-square rounded-xl text-xs font-bold transition ${event ? colorOf(event.type) : "bg-secondary text-foreground/70"}`}>{cell.d}</button>;
+          })}
+        </div>
+        <div className="mt-3 flex flex-wrap gap-3 text-[11px]">
+          <Legend color="var(--success)" label="Working day" />
+          <Legend color="var(--destructive)" label="Non-working day" />
+        </div>
       </Card>
 
       <div className="space-y-2">
