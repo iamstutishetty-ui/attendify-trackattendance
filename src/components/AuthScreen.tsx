@@ -40,7 +40,8 @@ export function AuthScreen() {
         if (uid) {
           // Ensure session exists for RLS-protected inserts
           if (!data.session) {
-            await supabase.auth.signInWithPassword({ email, password });
+            const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+            if (signInError) throw signInError;
           }
           const { error: pErr } = await supabase.from("profiles").insert({
             id: uid, user_id_text: userId.trim().toLowerCase(), full_name: fullName.trim(),
