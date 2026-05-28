@@ -231,7 +231,6 @@ function AttendanceTab() {
   const [students, setStudents] = React.useState<{ id: string; name: string; roll: string }[]>([]);
   const [statuses, setStatuses] = React.useState<Record<string, "present" | "absent">>({});
   const [calendarEvents, setCalendarEvents] = React.useState<Record<string, string>>({});
-  const [month, setMonth] = React.useState(() => { const d = new Date(); d.setDate(1); return d; });
   const [query, setQuery] = React.useState("");
   const [saving, setSaving] = React.useState(false);
 
