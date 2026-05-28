@@ -1,4 +1,5 @@
 import * as React from "react";
+import { motion } from "framer-motion";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth-context";
 import { AppHeader } from "@/components/AppHeader";
@@ -230,7 +231,6 @@ function AttendanceTab() {
   const [students, setStudents] = React.useState<{ id: string; name: string; roll: string }[]>([]);
   const [statuses, setStatuses] = React.useState<Record<string, "present" | "absent">>({});
   const [calendarEvents, setCalendarEvents] = React.useState<Record<string, string>>({});
-  const [month, setMonth] = React.useState(() => { const d = new Date(); d.setDate(1); return d; });
   const [query, setQuery] = React.useState("");
   const [saving, setSaving] = React.useState(false);
 
@@ -281,12 +281,19 @@ function AttendanceTab() {
     const rows = students.map((s) => ({
       class_id: activeClass, student_id: s.id, date: iso, status: statuses[s.id] ?? "present", marked_by: user!.id,
     }));
+    const hasPresent = rows.some((r) => r.status === "present");
     const { error } = await supabase.from("attendance_records").upsert(rows, { onConflict: "class_id,student_id,date" });
+    if (!error && hasPresent) {
+      // Auto-sync: if anyone is marked present, this date becomes a working day
+      await supabase.from("calendar_events").upsert(
+        { class_id: activeClass, date: iso, type: "working", title: "Working day" },
+        { onConflict: "class_id,date" },
+      );
+      setCalendarEvents((p) => ({ ...p, [iso]: "working" }));
+    }
     setSaving(false);
     if (error) toast.error(error.message); else toast.success("Attendance saved");
   }
-
-  const days = React.useMemo(() => monthCells(month), [month]);
 
   if (classes.length === 0) {
     return <EmptyState icon={ClipboardCheck} title="No active classes" text="Create a class first to mark attendance." />;
@@ -299,28 +306,8 @@ function AttendanceTab() {
         {classes.map((c) => <option key={c.id} value={c.id}>{c.name} — Sem {c.semester}</option>)}
       </select>
 
-      <Card className="rounded-3xl p-4">
-        <div className="flex items-center justify-between">
-          <button onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))} className="rounded-full bg-secondary px-3 py-1 text-sm">‹</button>
-          <div className="text-center">
-            <p className="font-bold">{month.toLocaleDateString("en", { month: "long", year: "numeric" })}</p>
-            <p className="text-xs text-muted-foreground">Selected: {date.toDateString()}</p>
-          </div>
-          <button onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))} className="rounded-full bg-secondary px-3 py-1 text-sm">›</button>
-        </div>
-        <div className="mt-3 grid grid-cols-7 gap-1 text-center text-[10px] text-muted-foreground">
-          {["S","M","T","W","T","F","S"].map((d, i) => <div key={i}>{d}</div>)}
-        </div>
-        <div className="mt-1 grid grid-cols-7 gap-1">
-          {days.map((cell, i) => {
-            if (!cell) return <div key={i} />;
-            const sel = cell.iso === toISODate(date);
-            const type = calendarEvents[cell.iso];
-            const cls = type === "working" ? "bg-success/20 text-success" : type === "non_working" ? "bg-destructive/15 text-destructive" : sel ? "blue-gradient text-white" : "bg-secondary text-foreground/70";
-            return <button key={cell.iso} onClick={() => setDate(new Date(cell.iso))} className={`aspect-square rounded-xl text-xs font-bold transition ${cls} ${sel ? "ring-2 ring-primary ring-offset-2 ring-offset-background" : ""}`}>{cell.d}</button>;
-          })}
-        </div>
-      </Card>
+      <WeeklyStrip date={date} onChange={setDate} events={calendarEvents} />
+
 
       <div className="grid grid-cols-2 gap-2">
         <Card className="rounded-2xl p-3" style={{ background: "oklch(0.95 0.08 145)" }}>
@@ -424,27 +411,29 @@ function CalendarTab() {
         {classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
       </select>
 
-      <Card className="rounded-3xl p-4">
+      <Card className="mx-auto w-full max-w-sm rounded-2xl p-3">
         <div className="flex items-center justify-between">
-          <button onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))} className="rounded-full bg-secondary px-3 py-1 text-sm">‹</button>
-          <p className="font-bold">{month.toLocaleDateString("en", { month: "long", year: "numeric" })}</p>
-          <button onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))} className="rounded-full bg-secondary px-3 py-1 text-sm">›</button>
+          <button onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))} className="rounded-full bg-secondary px-2.5 py-0.5 text-xs">‹</button>
+          <p className="text-sm font-bold">{month.toLocaleDateString("en", { month: "long", year: "numeric" })}</p>
+          <button onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))} className="rounded-full bg-secondary px-2.5 py-0.5 text-xs">›</button>
         </div>
-        <div className="mt-3 grid grid-cols-7 gap-1 text-center text-[10px] text-muted-foreground">
+        <p className="mt-1 text-center text-[10px] text-muted-foreground">Tap = working · Double-tap = non-working</p>
+        <div className="mt-2 grid grid-cols-7 gap-0.5 text-center text-[9px] text-muted-foreground">
           {["S","M","T","W","T","F","S"].map((d, i) => <div key={i}>{d}</div>)}
         </div>
-        <div className="mt-1 grid grid-cols-7 gap-1">
+        <div className="mt-0.5 grid grid-cols-7 gap-0.5">
           {days.map((cell, i) => {
             if (!cell) return <div key={i} />;
             const event = eventMap[cell.iso];
-            return <button key={cell.iso} onClick={() => handleDateClick(cell.iso)} onDoubleClick={() => handleDateDoubleClick(cell.iso)} className={`aspect-square rounded-xl text-xs font-bold transition ${event ? colorOf(event.type) : "bg-secondary text-foreground/70"}`}>{cell.d}</button>;
+            return <button key={cell.iso} onClick={() => handleDateClick(cell.iso)} onDoubleClick={() => handleDateDoubleClick(cell.iso)} className={`aspect-square rounded-lg text-[11px] font-semibold transition ${event ? colorOf(event.type) : "bg-secondary text-foreground/70"}`}>{cell.d}</button>;
           })}
         </div>
-        <div className="mt-3 flex flex-wrap gap-3 text-[11px]">
-          <Legend color="var(--success)" label="Working day" />
-          <Legend color="var(--destructive)" label="Non-working day" />
+        <div className="mt-2 flex flex-wrap justify-center gap-3 text-[10px]">
+          <Legend color="var(--success)" label="Working" />
+          <Legend color="var(--destructive)" label="Non-working" />
         </div>
       </Card>
+
 
       <div className="space-y-2">
         {events.length === 0 ? <p className="text-center text-sm text-muted-foreground py-6">No events yet</p> :
@@ -609,3 +598,101 @@ function EmptyState({ icon: Icon, title, text }: { icon: React.ElementType; titl
     </Card>
   );
 }
+
+function startOfWeek(d: Date) {
+  const x = new Date(d); x.setHours(0, 0, 0, 0);
+  x.setDate(x.getDate() - x.getDay());
+  return x;
+}
+function addDays(d: Date, n: number) {
+  const x = new Date(d); x.setDate(x.getDate() + n); return x;
+}
+
+function WeeklyStrip({ date, onChange, events }: { date: Date; onChange: (d: Date) => void; events: Record<string, string> }) {
+  const [weekStart, setWeekStart] = React.useState(() => startOfWeek(date));
+  const [dir, setDir] = React.useState(0);
+  React.useEffect(() => { setWeekStart(startOfWeek(date)); }, [date]);
+
+  const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
+  const todayIso = toISODate(new Date());
+
+  function shiftWeek(delta: number) {
+    setDir(delta);
+    setWeekStart((w) => addDays(w, delta * 7));
+  }
+
+  return (
+    <Card className="overflow-hidden rounded-3xl p-4" style={{ background: "oklch(0.98 0.015 250)" }}>
+      <div className="mb-3 flex items-center justify-between">
+        <button onClick={() => shiftWeek(-1)} className="grid h-8 w-8 place-items-center rounded-full bg-white/80 text-muted-foreground shadow-sm transition hover:bg-white">‹</button>
+        <motion.p
+          key={toISODate(date)}
+          initial={{ opacity: 0, y: -4 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="text-center text-sm font-semibold"
+        >
+          {date.toLocaleDateString("en", { weekday: "long", month: "long", day: "numeric", year: "numeric" })}
+        </motion.p>
+        <button onClick={() => shiftWeek(1)} className="grid h-8 w-8 place-items-center rounded-full bg-white/80 text-muted-foreground shadow-sm transition hover:bg-white">›</button>
+      </div>
+      <div className="relative touch-pan-y">
+        <motion.div
+          key={weekStart.toISOString()}
+          drag="x"
+          dragConstraints={{ left: 0, right: 0 }}
+          dragElastic={0.25}
+          initial={{ x: dir * 60, opacity: 0.6 }}
+          animate={{ x: 0, opacity: 1 }}
+          transition={{ type: "spring", stiffness: 280, damping: 30 }}
+          onDragEnd={(_, info) => {
+            if (info.offset.x < -50) shiftWeek(1);
+            else if (info.offset.x > 50) shiftWeek(-1);
+          }}
+          className="flex items-end justify-between gap-1.5"
+        >
+          {days.map((d) => {
+            const iso = toISODate(d);
+            const selected = iso === toISODate(date);
+            const type = events[iso];
+            const isOff = type === "non_working";
+            const isWork = type === "working";
+            const isToday = iso === todayIso;
+            const wd = d.toLocaleDateString("en", { weekday: "short" }).slice(0, 3);
+            return (
+              <motion.button
+                key={iso}
+                onClick={() => onChange(d)}
+                whileTap={{ scale: 0.92 }}
+                animate={{ height: selected ? 96 : 72 }}
+                transition={{ type: "spring", stiffness: 260, damping: 22 }}
+                className={`flex flex-1 flex-col items-center justify-between rounded-full py-3 transition-colors ${
+                  selected
+                    ? "bg-gradient-to-b from-[oklch(0.65_0.18_260)] to-[oklch(0.55_0.22_270)] text-white shadow-lg shadow-primary/25"
+                    : isOff
+                    ? "bg-[oklch(0.93_0.06_25)] text-[oklch(0.55_0.20_25)]"
+                    : isWork
+                    ? "bg-[oklch(0.93_0.08_155)] text-[oklch(0.40_0.15_155)]"
+                    : "bg-white/70 text-muted-foreground"
+                }`}
+              >
+                <span className="text-[10px] font-bold uppercase tracking-wide opacity-90">{wd}</span>
+                <span
+                  className={`grid place-items-center rounded-full text-sm font-extrabold ${
+                    selected
+                      ? "h-9 w-9 bg-white text-[oklch(0.55_0.22_270)]"
+                      : isToday
+                      ? "h-8 w-8 ring-2 ring-primary/50"
+                      : "h-8 w-8"
+                  }`}
+                >
+                  {d.getDate()}
+                </span>
+              </motion.button>
+            );
+          })}
+        </motion.div>
+      </div>
+    </Card>
+  );
+}
+
