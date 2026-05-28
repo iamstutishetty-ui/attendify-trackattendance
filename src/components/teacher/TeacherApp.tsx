@@ -282,12 +282,19 @@ function AttendanceTab() {
     const rows = students.map((s) => ({
       class_id: activeClass, student_id: s.id, date: iso, status: statuses[s.id] ?? "present", marked_by: user!.id,
     }));
+    const hasPresent = rows.some((r) => r.status === "present");
     const { error } = await supabase.from("attendance_records").upsert(rows, { onConflict: "class_id,student_id,date" });
+    if (!error && hasPresent) {
+      // Auto-sync: if anyone is marked present, this date becomes a working day
+      await supabase.from("calendar_events").upsert(
+        { class_id: activeClass, date: iso, type: "working", title: "Working day" },
+        { onConflict: "class_id,date" },
+      );
+      setCalendarEvents((p) => ({ ...p, [iso]: "working" }));
+    }
     setSaving(false);
     if (error) toast.error(error.message); else toast.success("Attendance saved");
   }
-
-  const days = React.useMemo(() => monthCells(month), [month]);
 
   if (classes.length === 0) {
     return <EmptyState icon={ClipboardCheck} title="No active classes" text="Create a class first to mark attendance." />;
@@ -300,28 +307,8 @@ function AttendanceTab() {
         {classes.map((c) => <option key={c.id} value={c.id}>{c.name} — Sem {c.semester}</option>)}
       </select>
 
-      <Card className="rounded-3xl p-4">
-        <div className="flex items-center justify-between">
-          <button onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))} className="rounded-full bg-secondary px-3 py-1 text-sm">‹</button>
-          <div className="text-center">
-            <p className="font-bold">{month.toLocaleDateString("en", { month: "long", year: "numeric" })}</p>
-            <p className="text-xs text-muted-foreground">Selected: {date.toDateString()}</p>
-          </div>
-          <button onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))} className="rounded-full bg-secondary px-3 py-1 text-sm">›</button>
-        </div>
-        <div className="mt-3 grid grid-cols-7 gap-1 text-center text-[10px] text-muted-foreground">
-          {["S","M","T","W","T","F","S"].map((d, i) => <div key={i}>{d}</div>)}
-        </div>
-        <div className="mt-1 grid grid-cols-7 gap-1">
-          {days.map((cell, i) => {
-            if (!cell) return <div key={i} />;
-            const sel = cell.iso === toISODate(date);
-            const type = calendarEvents[cell.iso];
-            const cls = type === "working" ? "bg-success/20 text-success" : type === "non_working" ? "bg-destructive/15 text-destructive" : sel ? "blue-gradient text-white" : "bg-secondary text-foreground/70";
-            return <button key={cell.iso} onClick={() => setDate(new Date(cell.iso))} className={`aspect-square rounded-xl text-xs font-bold transition ${cls} ${sel ? "ring-2 ring-primary ring-offset-2 ring-offset-background" : ""}`}>{cell.d}</button>;
-          })}
-        </div>
-      </Card>
+      <WeeklyStrip date={date} onChange={setDate} events={calendarEvents} />
+
 
       <div className="grid grid-cols-2 gap-2">
         <Card className="rounded-2xl p-3" style={{ background: "oklch(0.95 0.08 145)" }}>
