@@ -411,27 +411,29 @@ function CalendarTab() {
         {classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
       </select>
 
-      <Card className="rounded-3xl p-4">
+      <Card className="mx-auto w-full max-w-sm rounded-2xl p-3">
         <div className="flex items-center justify-between">
-          <button onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))} className="rounded-full bg-secondary px-3 py-1 text-sm">‹</button>
-          <p className="font-bold">{month.toLocaleDateString("en", { month: "long", year: "numeric" })}</p>
-          <button onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))} className="rounded-full bg-secondary px-3 py-1 text-sm">›</button>
+          <button onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))} className="rounded-full bg-secondary px-2.5 py-0.5 text-xs">‹</button>
+          <p className="text-sm font-bold">{month.toLocaleDateString("en", { month: "long", year: "numeric" })}</p>
+          <button onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))} className="rounded-full bg-secondary px-2.5 py-0.5 text-xs">›</button>
         </div>
-        <div className="mt-3 grid grid-cols-7 gap-1 text-center text-[10px] text-muted-foreground">
+        <p className="mt-1 text-center text-[10px] text-muted-foreground">Tap = working · Double-tap = non-working</p>
+        <div className="mt-2 grid grid-cols-7 gap-0.5 text-center text-[9px] text-muted-foreground">
           {["S","M","T","W","T","F","S"].map((d, i) => <div key={i}>{d}</div>)}
         </div>
-        <div className="mt-1 grid grid-cols-7 gap-1">
+        <div className="mt-0.5 grid grid-cols-7 gap-0.5">
           {days.map((cell, i) => {
             if (!cell) return <div key={i} />;
             const event = eventMap[cell.iso];
-            return <button key={cell.iso} onClick={() => handleDateClick(cell.iso)} onDoubleClick={() => handleDateDoubleClick(cell.iso)} className={`aspect-square rounded-xl text-xs font-bold transition ${event ? colorOf(event.type) : "bg-secondary text-foreground/70"}`}>{cell.d}</button>;
+            return <button key={cell.iso} onClick={() => handleDateClick(cell.iso)} onDoubleClick={() => handleDateDoubleClick(cell.iso)} className={`aspect-square rounded-lg text-[11px] font-semibold transition ${event ? colorOf(event.type) : "bg-secondary text-foreground/70"}`}>{cell.d}</button>;
           })}
         </div>
-        <div className="mt-3 flex flex-wrap gap-3 text-[11px]">
-          <Legend color="var(--success)" label="Working day" />
-          <Legend color="var(--destructive)" label="Non-working day" />
+        <div className="mt-2 flex flex-wrap justify-center gap-3 text-[10px]">
+          <Legend color="var(--success)" label="Working" />
+          <Legend color="var(--destructive)" label="Non-working" />
         </div>
       </Card>
+
 
       <div className="space-y-2">
         {events.length === 0 ? <p className="text-center text-sm text-muted-foreground py-6">No events yet</p> :
