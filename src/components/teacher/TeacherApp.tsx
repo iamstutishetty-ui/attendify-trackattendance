@@ -596,3 +596,101 @@ function EmptyState({ icon: Icon, title, text }: { icon: React.ElementType; titl
     </Card>
   );
 }
+
+function startOfWeek(d: Date) {
+  const x = new Date(d); x.setHours(0, 0, 0, 0);
+  x.setDate(x.getDate() - x.getDay());
+  return x;
+}
+function addDays(d: Date, n: number) {
+  const x = new Date(d); x.setDate(x.getDate() + n); return x;
+}
+
+function WeeklyStrip({ date, onChange, events }: { date: Date; onChange: (d: Date) => void; events: Record<string, string> }) {
+  const [weekStart, setWeekStart] = React.useState(() => startOfWeek(date));
+  const [dir, setDir] = React.useState(0);
+  React.useEffect(() => { setWeekStart(startOfWeek(date)); }, [date]);
+
+  const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
+  const todayIso = toISODate(new Date());
+
+  function shiftWeek(delta: number) {
+    setDir(delta);
+    setWeekStart((w) => addDays(w, delta * 7));
+  }
+
+  return (
+    <Card className="overflow-hidden rounded-3xl p-4" style={{ background: "oklch(0.98 0.015 250)" }}>
+      <div className="mb-3 flex items-center justify-between">
+        <button onClick={() => shiftWeek(-1)} className="grid h-8 w-8 place-items-center rounded-full bg-white/80 text-muted-foreground shadow-sm transition hover:bg-white">‹</button>
+        <motion.p
+          key={toISODate(date)}
+          initial={{ opacity: 0, y: -4 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="text-center text-sm font-semibold"
+        >
+          {date.toLocaleDateString("en", { weekday: "long", month: "long", day: "numeric", year: "numeric" })}
+        </motion.p>
+        <button onClick={() => shiftWeek(1)} className="grid h-8 w-8 place-items-center rounded-full bg-white/80 text-muted-foreground shadow-sm transition hover:bg-white">›</button>
+      </div>
+      <div className="relative touch-pan-y">
+        <motion.div
+          key={weekStart.toISOString()}
+          drag="x"
+          dragConstraints={{ left: 0, right: 0 }}
+          dragElastic={0.25}
+          initial={{ x: dir * 60, opacity: 0.6 }}
+          animate={{ x: 0, opacity: 1 }}
+          transition={{ type: "spring", stiffness: 280, damping: 30 }}
+          onDragEnd={(_, info) => {
+            if (info.offset.x < -50) shiftWeek(1);
+            else if (info.offset.x > 50) shiftWeek(-1);
+          }}
+          className="flex items-end justify-between gap-1.5"
+        >
+          {days.map((d) => {
+            const iso = toISODate(d);
+            const selected = iso === toISODate(date);
+            const type = events[iso];
+            const isOff = type === "non_working";
+            const isWork = type === "working";
+            const isToday = iso === todayIso;
+            const wd = d.toLocaleDateString("en", { weekday: "short" }).slice(0, 3);
+            return (
+              <motion.button
+                key={iso}
+                onClick={() => onChange(d)}
+                whileTap={{ scale: 0.92 }}
+                animate={{ height: selected ? 96 : 72 }}
+                transition={{ type: "spring", stiffness: 260, damping: 22 }}
+                className={`flex flex-1 flex-col items-center justify-between rounded-full py-3 transition-colors ${
+                  selected
+                    ? "bg-gradient-to-b from-[oklch(0.65_0.18_260)] to-[oklch(0.55_0.22_270)] text-white shadow-lg shadow-primary/25"
+                    : isOff
+                    ? "bg-[oklch(0.93_0.06_25)] text-[oklch(0.55_0.20_25)]"
+                    : isWork
+                    ? "bg-[oklch(0.93_0.08_155)] text-[oklch(0.40_0.15_155)]"
+                    : "bg-white/70 text-muted-foreground"
+                }`}
+              >
+                <span className="text-[10px] font-bold uppercase tracking-wide opacity-90">{wd}</span>
+                <span
+                  className={`grid place-items-center rounded-full text-sm font-extrabold ${
+                    selected
+                      ? "h-9 w-9 bg-white text-[oklch(0.55_0.22_270)]"
+                      : isToday
+                      ? "h-8 w-8 ring-2 ring-primary/50"
+                      : "h-8 w-8"
+                  }`}
+                >
+                  {d.getDate()}
+                </span>
+              </motion.button>
+            );
+          })}
+        </motion.div>
+      </div>
+    </Card>
+  );
+}
+
