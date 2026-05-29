@@ -515,62 +515,127 @@ function CalendarTab() {
 
 /* -------------------- DEFAULTERS TAB -------------------- */
 function DefaultersTab() {
+/* -------------------- DEFAULTERS TAB -------------------- */
+function DefaultersTab() {
   const { user } = useAuth();
   const [classes, setClasses] = React.useState<ClassRow[]>([]);
-  const [activeClass, setActiveClass] = React.useState<string>("");
-  const [rows, setRows] = React.useState<{ id: string; name: string; roll: string; present: number; total: number; pct: number }[]>([]);
+  const [semester, setSemester] = React.useState<string>("");
+  const [view, setView] = React.useState<"below" | "above">("below");
+  const [rows, setRows] = React.useState<{ id: string; name: string; roll: string; cls: string; present: number; total: number; pct: number }[]>([]);
 
   React.useEffect(() => {
     supabase.from("classes").select("*").eq("teacher_id", user!.id).eq("archived", false).then(({ data }) => {
       const list = (data as ClassRow[]) ?? [];
-      setClasses(list); setActiveClass(list[0]?.id ?? "");
+      setClasses(list);
+      if (list.length && !semester) setSemester(list[0].semester);
     });
-  }, [user]);
+  }, [user]); // eslint-disable-line
 
   React.useEffect(() => {
-    if (!activeClass) return;
+    if (!semester) return;
+    const targetIds = classes.filter((c) => c.semester === semester).map((c) => c.id);
+    if (targetIds.length === 0) { setRows([]); return; }
     (async () => {
       const [{ data: enrolls }, { data: att }] = await Promise.all([
-        supabase.from("class_enrollments").select("student_id, roll_number, profiles!class_enrollments_student_id_fkey(full_name, user_id_text)").eq("class_id", activeClass),
-        supabase.from("attendance_records").select("student_id, status").eq("class_id", activeClass),
+        supabase.from("class_enrollments").select("class_id, student_id, roll_number, profiles!class_enrollments_student_id_fkey(full_name, user_id_text)").in("class_id", targetIds),
+        supabase.from("attendance_records").select("class_id, student_id, status").in("class_id", targetIds),
       ]);
-      const byStudent: Record<string, { p: number; t: number }> = {};
+      const clsMap = new Map(classes.map((c) => [c.id, c.name]));
+      const byKey: Record<string, { p: number; t: number }> = {};
       (att as any[] ?? []).forEach((a) => {
-        byStudent[a.student_id] = byStudent[a.student_id] || { p: 0, t: 0 };
-        byStudent[a.student_id].t += 1;
-        if (a.status === "present") byStudent[a.student_id].p += 1;
+        const k = `${a.class_id}:${a.student_id}`;
+        byKey[k] = byKey[k] || { p: 0, t: 0 };
+        byKey[k].t += 1;
+        if (a.status === "present") byKey[k].p += 1;
       });
       const list = (enrolls as any[] ?? []).map((e) => {
-        const st = byStudent[e.student_id] ?? { p: 0, t: 0 };
+        const st = byKey[`${e.class_id}:${e.student_id}`] ?? { p: 0, t: 0 };
         return {
-          id: e.student_id,
+          id: `${e.class_id}:${e.student_id}`,
           name: e.profiles?.full_name || "Student",
           roll: e.roll_number || e.profiles?.user_id_text || "",
+          cls: clsMap.get(e.class_id) || "",
           present: st.p, total: st.t,
           pct: st.t === 0 ? 100 : Math.round((st.p / st.t) * 100),
         };
       }).sort((a, b) => a.pct - b.pct);
       setRows(list);
     })();
-  }, [activeClass]);
-
-  const below = rows.filter((r) => r.pct < 75);
-  const above = rows.filter((r) => r.pct >= 75);
+  }, [semester, classes]);
 
   if (classes.length === 0) return <EmptyState icon={AlertTriangle} title="No active classes" text="Create a class first." />;
+  const semesters = [...new Set(classes.map((c) => c.semester))];
+  const filtered = view === "below" ? rows.filter((r) => r.pct < 75) : rows.filter((r) => r.pct >= 75);
 
   return (
     <section className="space-y-4">
-      <select value={activeClass} onChange={(e) => setActiveClass(e.target.value)} className="h-11 w-full rounded-xl border border-input bg-card px-3 text-sm font-semibold">
-        {classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+      <select value={semester} onChange={(e) => setSemester(e.target.value)} className="h-11 w-full rounded-xl border border-input bg-card px-3 text-sm font-semibold">
+        {semesters.map((s) => <option key={s} value={s}>Sem {s}</option>)}
       </select>
-      <Section title={`Below 75% (${below.length})`} rows={below} danger />
-      <Section title={`Above 75% (${above.length})`} rows={above} />
+      <div className="flex gap-2 rounded-full bg-secondary p-1">
+        {[{ v: "below" as const, l: "Below 75%" }, { v: "above" as const, l: "Above 75%" }].map(({ v, l }) => (
+          <button key={v} onClick={() => setView(v)} className={`flex-1 rounded-full py-1.5 text-xs font-semibold ${view === v ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}>{l}</button>
+        ))}
+      </div>
+      <Section title={`${view === "below" ? "Below" : "Above"} 75% (${filtered.length})`} rows={filtered} danger={view === "below"} />
     </section>
   );
 }
 
 function Section({ title, rows, danger }: { title: string; rows: any[]; danger?: boolean }) {
+  return (
+    <div className="space-y-2">
+      <h3 className={`text-sm font-bold ${danger ? "text-destructive" : ""}`}>{title}</h3>
+      {rows.length === 0 ? <p className="text-xs text-muted-foreground">None</p> :
+        rows.map((r) => {
+          const need = r.pct < 75 ? Math.ceil((0.75 * r.total - r.present) / 0.25) : 0;
+          const color = r.pct >= 85 ? "oklch(0.55 0.18 145)" : r.pct >= 75 ? "oklch(0.70 0.16 85)" : "oklch(0.55 0.22 25)";
+          return (
+            <Card key={r.id} className="rounded-2xl p-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-semibold">{r.name}</p>
+                  <p className="text-[11px] text-muted-foreground">{r.roll}{r.cls ? ` · ${r.cls}` : ""} · {r.present}/{r.total} classes</p>
+                </div>
+                <span className="text-lg font-bold" style={{ color }}>{r.pct}%</span>
+              </div>
+              {need > 0 && <p className="mt-1 text-[11px] text-destructive">Need {need} more present to reach 75%</p>}
+            </Card>
+          );
+        })}
+    </div>
+  );
+}
+
+/* -------------------- PROFILE TAB -------------------- */
+function ProfileTab() {
+  const { profile, role, signOut } = useAuth();
+  const deleteMe = useServerFn(deleteMyAccount);
+  const [busy, setBusy] = React.useState(false);
+  async function handleDelete() {
+    if (!window.confirm("Delete your account? This cannot be undone.")) return;
+    setBusy(true);
+    try { await deleteMe(); await signOut(); toast.success("Account deleted"); }
+    catch (e: any) { toast.error(e.message || "Failed"); }
+    finally { setBusy(false); }
+  }
+  return (
+    <section className="space-y-4">
+      <Card className="card-soft rounded-3xl p-6 text-center">
+        <div className="mx-auto grid h-20 w-20 place-items-center rounded-full blue-gradient text-3xl font-bold text-white">
+          {(profile?.full_name || profile?.user_id_text || "?")[0].toUpperCase()}
+        </div>
+        <p className="mt-3 text-lg font-bold">{profile?.full_name}</p>
+        <p className="text-xs text-muted-foreground">@{profile?.user_id_text} · {role}</p>
+      </Card>
+      <Button variant="outline" onClick={signOut} className="h-11 w-full rounded-xl">Log out</Button>
+      <Button variant="destructive" disabled={busy} onClick={handleDelete} className="h-11 w-full rounded-xl">
+        {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Delete my account
+      </Button>
+    </section>
+  );
+}
+
   return (
     <div className="space-y-2">
       <h3 className={`text-sm font-bold ${danger ? "text-destructive" : ""}`}>{title}</h3>
