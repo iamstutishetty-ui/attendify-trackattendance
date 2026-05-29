@@ -125,9 +125,10 @@ function ClassesTab({ onGoToAttendance }: { onGoToAttendance: () => void }) {
     </section>
   );
 }
-
 function ClassCard({ c, onChange, onMark }: { c: ClassRow; onChange: () => void; onMark: () => void }) {
   const [count, setCount] = React.useState<number | null>(null);
+  const [editing, setEditing] = React.useState(false);
+  const [name, setName] = React.useState(c.name);
   React.useEffect(() => {
     supabase.from("class_enrollments").select("id", { count: "exact", head: true }).eq("class_id", c.id)
       .then(({ count }) => setCount(count ?? 0));
@@ -138,8 +139,23 @@ function ClassCard({ c, onChange, onMark }: { c: ClassRow; onChange: () => void;
     if (error) toast.error(error.message); else { toast.success(c.archived ? "Restored" : "Archived"); onChange(); }
   }
 
+  async function saveName() {
+    if (!name.trim() || name === c.name) { setEditing(false); return; }
+    const { error } = await supabase.from("classes").update({ name: name.trim() }).eq("id", c.id);
+    if (error) toast.error(error.message); else { toast.success("Renamed"); setEditing(false); onChange(); }
+  }
+
+  async function deleteClass() {
+    if (!window.confirm(`Delete class "${c.name}"? This removes enrollments and attendance.`)) return;
+    // Best-effort cascade: clear dependent rows first (RLS lets teacher manage these)
+    await supabase.from("attendance_records").delete().eq("class_id", c.id);
+    await supabase.from("class_enrollments").delete().eq("class_id", c.id);
+    await supabase.from("calendar_events").delete().eq("class_id", c.id);
+    const { error } = await supabase.from("classes").delete().eq("id", c.id);
+    if (error) toast.error(error.message); else { toast.success("Class deleted"); onChange(); }
+  }
+
   async function promote() {
-    // Increment academic year
     const year = c.academic_year;
     const m = year.match(/(\d{4})\s*[-–/]\s*(\d{2,4})/);
     let next = year;
@@ -154,12 +170,23 @@ function ClassCard({ c, onChange, onMark }: { c: ClassRow; onChange: () => void;
 
   return (
     <Card className="card-soft rounded-2xl border p-4">
-      <div className="flex items-start justify-between">
-        <div>
-          <p className="text-base font-bold">{c.name}</p>
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex-1 min-w-0">
+          {editing ? (
+            <div className="flex gap-1">
+              <Input value={name} onChange={(e) => setName(e.target.value)} className="h-9 rounded-lg" autoFocus />
+              <Button size="sm" onClick={saveName} className="rounded-lg"><Check className="h-4 w-4" /></Button>
+              <Button size="sm" variant="outline" onClick={() => { setName(c.name); setEditing(false); }} className="rounded-lg"><X className="h-4 w-4" /></Button>
+            </div>
+          ) : (
+            <button onClick={() => setEditing(true)} className="flex items-center gap-2 text-left">
+              <p className="text-base font-bold">{c.name}</p>
+              <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
+            </button>
+          )}
           <p className="text-xs text-muted-foreground">Sem {c.semester} · {c.academic_year}</p>
         </div>
-        <Badge variant="secondary" className="rounded-full">{count ?? "—"} students</Badge>
+        <Badge variant="secondary" className="rounded-full shrink-0">{count ?? "—"} students</Badge>
       </div>
       <div className="mt-3 flex items-center gap-2 rounded-xl bg-secondary px-3 py-2">
         <span className="text-xs text-muted-foreground">Code</span>
@@ -172,13 +199,16 @@ function ClassCard({ c, onChange, onMark }: { c: ClassRow; onChange: () => void;
         <Button size="sm" variant="default" className="flex-1 rounded-full" onClick={() => { sessionStorage.setItem("activeClass", c.id); onMark(); }}>
           <ClipboardCheck className="mr-1 h-4 w-4" />Mark
         </Button>
-        <Button size="sm" variant="outline" className="rounded-full" onClick={promote}><ArrowUpRight className="h-4 w-4" /></Button>
-        <Button size="sm" variant="outline" className="rounded-full" onClick={toggleArchive}>
+        <Button size="sm" variant="outline" className="rounded-full" onClick={promote} title="Promote year"><ArrowUpRight className="h-4 w-4" /></Button>
+        <Button size="sm" variant="outline" className="rounded-full" onClick={toggleArchive} title={c.archived ? "Restore" : "Archive"}>
           {c.archived ? <ArchiveRestore className="h-4 w-4" /> : <Archive className="h-4 w-4" />}
         </Button>
+        <Button size="sm" variant="destructive" className="rounded-full" onClick={deleteClass} title="Delete"><Trash2 className="h-4 w-4" /></Button>
       </div>
     </Card>
   );
+}
+
 }
 
 function genCode() {
