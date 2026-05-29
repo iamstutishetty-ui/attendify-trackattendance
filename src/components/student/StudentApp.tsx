@@ -93,13 +93,19 @@ function DashboardTab() {
     e.preventDefault();
     if (!code.trim()) return;
     setBusy(true);
-    const { data: cls, error } = await supabase.from("classes").select("id").eq("class_code", code.trim().toUpperCase()).maybeSingle();
-    if (error || !cls) { setBusy(false); return toast.error("Invalid class code"); }
-    const { error: eErr } = await supabase.from("class_enrollments").insert({ class_id: cls.id, student_id: user!.id, roll_number: roll });
+    const { error } = await supabase.rpc("join_class_by_code", { _code: code.trim(), _roll: roll.trim() });
     setBusy(false);
-    if (eErr) toast.error(eErr.message.includes("duplicate") ? "Already joined" : eErr.message);
-    else { toast.success("Joined class"); setOpen(false); setCode(""); setRoll(""); reload(); }
+    if (error) {
+      const msg = error.message || "";
+      if (msg.includes("Invalid class code")) toast.error("Invalid class code");
+      else if (msg.includes("Already joined")) toast.error("Already joined");
+      else if (msg.includes("Only students")) toast.error("Only student accounts can join classes");
+      else toast.error(msg);
+      return;
+    }
+    toast.success("Joined class"); setOpen(false); setCode(""); setRoll(""); reload();
   }
+
 
   const overall = classes.reduce((acc, c) => ({ p: acc.p + c.present, t: acc.t + c.total }), { p: 0, t: 0 });
   const overallPct = overall.t === 0 ? 100 : Math.round((overall.p / overall.t) * 100);
