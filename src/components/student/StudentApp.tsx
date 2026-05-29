@@ -245,15 +245,18 @@ function CalendarTab() {
       </Card>
     </section>
   );
-}
-
-function Legend({ color, label }: { color: string; label: string }) {
-  return <span className="flex items-center gap-1.5"><span className="h-3 w-3 rounded-sm" style={{ background: color }} />{label}</span>;
-}
-
 function ProfileTab() {
   const { profile, role, signOut } = useAuth();
   const { classes } = useStudentClasses();
+  const deleteMe = useServerFn(deleteMyAccount);
+  const [busy, setBusy] = React.useState(false);
+  async function handleDelete() {
+    if (!window.confirm("Delete your account? This cannot be undone.")) return;
+    setBusy(true);
+    try { await deleteMe(); await signOut(); toast.success("Account deleted"); }
+    catch (e: any) { toast.error(e.message || "Failed"); }
+    finally { setBusy(false); }
+  }
   return (
     <section className="space-y-4">
       <Card className="card-soft rounded-3xl p-6 text-center">
@@ -272,6 +275,16 @@ function ProfileTab() {
             </div>
           ))}
           {classes.length === 0 && <p className="text-xs text-muted-foreground">None yet</p>}
+        </div>
+      </Card>
+      <Button variant="outline" onClick={signOut} className="h-11 w-full rounded-xl">Log out</Button>
+      <Button variant="destructive" disabled={busy} onClick={handleDelete} className="h-11 w-full rounded-xl">
+        {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Delete my account
+      </Button>
+    </section>
+  );
+}
+
         </div>
       </Card>
       <Button variant="destructive" onClick={signOut} className="h-11 w-full rounded-xl">Log out</Button>
