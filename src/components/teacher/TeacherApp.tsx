@@ -515,8 +515,7 @@ function CalendarTab() {
 
 /* -------------------- DEFAULTERS TAB -------------------- */
 function DefaultersTab() {
-/* -------------------- DEFAULTERS TAB -------------------- */
-function DefaultersTab() {
+
   const { user } = useAuth();
   const [classes, setClasses] = React.useState<ClassRow[]>([]);
   const [semester, setSemester] = React.useState<string>("");
