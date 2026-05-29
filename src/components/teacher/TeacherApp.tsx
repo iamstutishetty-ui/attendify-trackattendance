@@ -636,62 +636,7 @@ function ProfileTab() {
   );
 }
 
-  return (
-    <div className="space-y-2">
-      <h3 className={`text-sm font-bold ${danger ? "text-destructive" : ""}`}>{title}</h3>
-      {rows.length === 0 ? <p className="text-xs text-muted-foreground">None</p> :
-        rows.map((r) => {
-          const need = r.pct < 75 ? Math.ceil((0.75 * r.total - r.present) / 0.25) : 0;
-          const color = r.pct >= 85 ? "oklch(0.55 0.18 145)" : r.pct >= 75 ? "oklch(0.70 0.16 85)" : "oklch(0.55 0.22 25)";
-          return (
-            <Card key={r.id} className="rounded-2xl p-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-semibold">{r.name}</p>
-                  <p className="text-[11px] text-muted-foreground">{r.roll} · {r.present}/{r.total} classes</p>
-                </div>
-                <span className="text-lg font-bold" style={{ color }}>{r.pct}%</span>
-              </div>
-              {need > 0 && <p className="mt-1 text-[11px] text-destructive">Need {need} more present to reach 75%</p>}
-            </Card>
-          );
-        })}
-    </div>
-  );
-}
 
-/* -------------------- PROFILE TAB -------------------- */
-function ProfileTab() {
-  const { profile, role, signOut, refresh } = useAuth();
-  const [name, setName] = React.useState(profile?.full_name ?? "");
-  const [busy, setBusy] = React.useState(false);
-  React.useEffect(() => setName(profile?.full_name ?? ""), [profile]);
-
-  async function save() {
-    setBusy(true);
-    const { error } = await supabase.from("profiles").update({ full_name: name }).eq("id", profile!.id);
-    setBusy(false);
-    if (error) toast.error(error.message); else { toast.success("Saved"); refresh(); }
-  }
-
-  return (
-    <section className="space-y-4">
-      <Card className="card-soft rounded-3xl p-6 text-center">
-        <div className="mx-auto grid h-20 w-20 place-items-center rounded-full blue-gradient text-3xl font-bold text-white">
-          {(profile?.full_name || profile?.user_id_text || "?")[0].toUpperCase()}
-        </div>
-        <p className="mt-3 text-lg font-bold">{profile?.full_name}</p>
-        <p className="text-xs text-muted-foreground">@{profile?.user_id_text} · {role}</p>
-      </Card>
-      <Card className="rounded-2xl p-4 space-y-3">
-        <Label>Full name</Label>
-        <Input value={name} onChange={(e) => setName(e.target.value)} className="h-11 rounded-xl" />
-        <Button onClick={save} disabled={busy} className="h-11 w-full rounded-xl">{busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Save</Button>
-      </Card>
-      <Button variant="destructive" onClick={signOut} className="h-11 w-full rounded-xl">Log out</Button>
-    </section>
-  );
-}
 
 /* helpers */
 type MonthCell = { d: number; iso: string } | null;
