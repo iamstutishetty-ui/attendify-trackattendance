@@ -209,8 +209,6 @@ function ClassCard({ c, onChange, onMark }: { c: ClassRow; onChange: () => void;
   );
 }
 
-}
-
 function genCode() {
   return Math.random().toString(36).slice(2, 8).toUpperCase();
 }
@@ -218,41 +216,74 @@ function genCode() {
 function CreateClassDialog({ onCreated }: { onCreated: (created: ClassRow) => void }) {
   const { user } = useAuth();
   const [name, setName] = React.useState("");
-  const [sem, setSem] = React.useState("");
+  const [sem1, setSem1] = React.useState("");
+  const [sem1Months, setSem1Months] = React.useState("");
+  const [split, setSplit] = React.useState(false);
+  const [sem2, setSem2] = React.useState("");
+  const [sem2Months, setSem2Months] = React.useState("");
   const [year, setYear] = React.useState("2025-26");
   const [busy, setBusy] = React.useState(false);
 
+  function semLabel(n: string, months: string) {
+    return months.trim() ? `${n} (${months.trim()})` : n;
+  }
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (!name || !sem || !year) return toast.error("Fill all fields");
+    if (!name || !sem1 || !year) return toast.error("Fill all fields");
+    if (split && !sem2) return toast.error("Enter second semester number");
     setBusy(true);
-    const classCode = genCode();
-    const { data, error } = await supabase.from("classes").insert({
-      name, semester: sem, academic_year: year, class_code: classCode, teacher_id: user!.id,
-    }).select("*").single();
+    const rows: any[] = [
+      { name, semester: semLabel(sem1, sem1Months), academic_year: year, class_code: genCode(), teacher_id: user!.id },
+    ];
+    if (split) {
+      rows.push({ name, semester: semLabel(sem2, sem2Months), academic_year: year, class_code: genCode(), teacher_id: user!.id });
+    }
+    const { data, error } = await supabase.from("classes").insert(rows).select("*");
     setBusy(false);
-    if (error) toast.error(error.message); else { toast.success(`Class created · Code ${classCode}`); onCreated(data as ClassRow); }
+    if (error) return toast.error(error.message);
+    const created = (data as ClassRow[]) ?? [];
+    toast.success(split ? `2 classes created` : `Class created · Code ${created[0]?.class_code}`);
+    if (created[0]) onCreated(created[0]);
   }
 
   return (
-    <DialogContent className="rounded-3xl">
+    <DialogContent className="rounded-3xl max-h-[90vh] overflow-y-auto">
       <DialogHeader>
         <DialogTitle>New class</DialogTitle>
         <DialogDescription>Create a class and share its code with students.</DialogDescription>
       </DialogHeader>
       <form onSubmit={submit} className="space-y-3">
         <div><Label>Class name</Label><Input value={name} onChange={(e) => setName(e.target.value)} placeholder="SY CSE A" className="rounded-xl h-11" /></div>
-        <div className="grid grid-cols-2 gap-2">
-          <div><Label>Semester</Label><Input value={sem} onChange={(e) => setSem(e.target.value)} placeholder="3" className="rounded-xl h-11" /></div>
-          <div><Label>Year</Label><Input value={year} onChange={(e) => setYear(e.target.value)} className="rounded-xl h-11" /></div>
+        <div><Label>Academic year</Label><Input value={year} onChange={(e) => setYear(e.target.value)} placeholder="2025-26" className="rounded-xl h-11" /></div>
+        <div className="rounded-xl border p-3 space-y-2">
+          <p className="text-xs font-semibold">Semester 1</p>
+          <div className="grid grid-cols-2 gap-2">
+            <div><Label className="text-xs">Number</Label><Input value={sem1} onChange={(e) => setSem1(e.target.value)} placeholder="3" className="rounded-xl h-10" /></div>
+            <div><Label className="text-xs">Months</Label><Input value={sem1Months} onChange={(e) => setSem1Months(e.target.value)} placeholder="Jul–Nov" className="rounded-xl h-10" /></div>
+          </div>
         </div>
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={split} onChange={(e) => setSplit(e.target.checked)} className="h-4 w-4" />
+          Split year into 2 semesters (same year)
+        </label>
+        {split && (
+          <div className="rounded-xl border p-3 space-y-2">
+            <p className="text-xs font-semibold">Semester 2</p>
+            <div className="grid grid-cols-2 gap-2">
+              <div><Label className="text-xs">Number</Label><Input value={sem2} onChange={(e) => setSem2(e.target.value)} placeholder="4" className="rounded-xl h-10" /></div>
+              <div><Label className="text-xs">Months</Label><Input value={sem2Months} onChange={(e) => setSem2Months(e.target.value)} placeholder="Dec–Apr" className="rounded-xl h-10" /></div>
+            </div>
+          </div>
+        )}
         <Button type="submit" disabled={busy} className="h-11 w-full rounded-xl">
-          {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Create class
+          {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Create {split ? "classes" : "class"}
         </Button>
       </form>
     </DialogContent>
   );
 }
+
 
 /* -------------------- ATTENDANCE TAB -------------------- */
 function AttendanceTab() {
