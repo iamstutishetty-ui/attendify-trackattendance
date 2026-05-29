@@ -1,6 +1,8 @@
 import * as React from "react";
+import { useServerFn } from "@tanstack/react-start";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth-context";
+import { deleteMyAccount } from "@/lib/accounts.functions";
 import { AppHeader } from "@/components/AppHeader";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -9,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { LayoutDashboard, CalendarDays, User as UserIcon, Plus, Loader2 } from "lucide-react";
 import { toast } from "sonner";
+
 
 type Tab = "dashboard" | "calendar" | "profile";
 const tabs: { id: Tab; label: string; icon: React.ElementType }[] = [
@@ -93,13 +96,19 @@ function DashboardTab() {
     e.preventDefault();
     if (!code.trim()) return;
     setBusy(true);
-    const { data: cls, error } = await supabase.from("classes").select("id").eq("class_code", code.trim().toUpperCase()).maybeSingle();
-    if (error || !cls) { setBusy(false); return toast.error("Invalid class code"); }
-    const { error: eErr } = await supabase.from("class_enrollments").insert({ class_id: cls.id, student_id: user!.id, roll_number: roll });
+    const { error } = await supabase.rpc("join_class_by_code", { _code: code.trim(), _roll: roll.trim() });
     setBusy(false);
-    if (eErr) toast.error(eErr.message.includes("duplicate") ? "Already joined" : eErr.message);
-    else { toast.success("Joined class"); setOpen(false); setCode(""); setRoll(""); reload(); }
+    if (error) {
+      const msg = error.message || "";
+      if (msg.includes("Invalid class code")) toast.error("Invalid class code");
+      else if (msg.includes("Already joined")) toast.error("Already joined");
+      else if (msg.includes("Only students")) toast.error("Only student accounts can join classes");
+      else toast.error(msg);
+      return;
+    }
+    toast.success("Joined class"); setOpen(false); setCode(""); setRoll(""); reload();
   }
+
 
   const overall = classes.reduce((acc, c) => ({ p: acc.p + c.present, t: acc.t + c.total }), { p: 0, t: 0 });
   const overallPct = overall.t === 0 ? 100 : Math.round((overall.p / overall.t) * 100);
@@ -246,8 +255,18 @@ function Legend({ color, label }: { color: string; label: string }) {
 }
 
 function ProfileTab() {
+
   const { profile, role, signOut } = useAuth();
   const { classes } = useStudentClasses();
+  const deleteMe = useServerFn(deleteMyAccount);
+  const [busy, setBusy] = React.useState(false);
+  async function handleDelete() {
+    if (!window.confirm("Delete your account? This cannot be undone.")) return;
+    setBusy(true);
+    try { await deleteMe(); await signOut(); toast.success("Account deleted"); }
+    catch (e: any) { toast.error(e.message || "Failed"); }
+    finally { setBusy(false); }
+  }
   return (
     <section className="space-y-4">
       <Card className="card-soft rounded-3xl p-6 text-center">
@@ -268,10 +287,15 @@ function ProfileTab() {
           {classes.length === 0 && <p className="text-xs text-muted-foreground">None yet</p>}
         </div>
       </Card>
-      <Button variant="destructive" onClick={signOut} className="h-11 w-full rounded-xl">Log out</Button>
+      <Button variant="outline" onClick={signOut} className="h-11 w-full rounded-xl">Log out</Button>
+      <Button variant="destructive" disabled={busy} onClick={handleDelete} className="h-11 w-full rounded-xl">
+        {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Delete my account
+      </Button>
     </section>
   );
 }
+
+
 
 function toISODate(d: Date) {
   const y = d.getFullYear(), m = String(d.getMonth()+1).padStart(2,"0"), day = String(d.getDate()).padStart(2,"0");

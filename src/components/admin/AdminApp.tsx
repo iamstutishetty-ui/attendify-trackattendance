@@ -2,33 +2,34 @@ import * as React from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth-context";
-import { deleteAccount } from "@/lib/accounts.functions";
+import { deleteMyAccount } from "@/lib/accounts.functions";
 import { AppHeader } from "@/components/AppHeader";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Loader2, Search, Users, BookOpen, BarChart3, Trash2 } from "lucide-react";
+import { Label } from "@/components/ui/label";
+import { Loader2, Search, Users, BookOpen, BarChart3 } from "lucide-react";
 import { toast } from "sonner";
 
-interface ClassStat {
-  id: string; name: string; semester: string; teacher_name: string;
-  total_students: number; present: number; absent: number; pct: number;
+interface ClassLookup {
+  id: string; name: string; semester: string; academic_year: string;
+  class_code: string; teacher_name: string; total_students: number;
+  present: number; absent: number; pct: number;
 }
 
 interface AccountRow { id: string; user_id_text: string; full_name: string; role: string; }
 
 export function AdminApp() {
-  const { user } = useAuth();
-  const removeAccount = useServerFn(deleteAccount);
-  const [classes, setClasses] = React.useState<ClassStat[]>([]);
-  const [accounts, setAccounts] = React.useState<AccountRow[]>([]);
-  const [loading, setLoading] = React.useState(true);
-  const [accountsLoading, setAccountsLoading] = React.useState(true);
-  const [deletingId, setDeletingId] = React.useState<string | null>(null);
+  const { user, profile, role, signOut } = useAuth();
+  const deleteMe = useServerFn(deleteMyAccount);
+  const [code, setCode] = React.useState("");
   const [date, setDate] = React.useState(new Date().toISOString().slice(0, 10));
-  const [query, setQuery] = React.useState("");
-  const [semFilter, setSemFilter] = React.useState("");
-  const [teacherFilter, setTeacherFilter] = React.useState("");
+  const [lookup, setLookup] = React.useState<ClassLookup | null>(null);
+  const [looking, setLooking] = React.useState(false);
+  const [accounts, setAccounts] = React.useState<AccountRow[]>([]);
+  const [accountsLoading, setAccountsLoading] = React.useState(true);
+  const [accountQuery, setAccountQuery] = React.useState("");
+  const [deleting, setDeleting] = React.useState(false);
 
   const loadAccounts = React.useCallback(async () => {
     setAccountsLoading(true);
@@ -41,115 +42,93 @@ export function AdminApp() {
     setAccountsLoading(false);
   }, []);
 
-  React.useEffect(() => {
-    (async () => {
-      setLoading(true);
-      const { data: cls } = await supabase.from("classes").select("*").eq("archived", false);
-      const list = (cls as any[]) ?? [];
-      if (list.length === 0) { setClasses([]); setLoading(false); return; }
-      const ids = list.map((c) => c.id);
-      const teacherIds = [...new Set(list.map((c) => c.teacher_id))];
-      const [{ data: enrolls }, { data: att }, { data: teachers }] = await Promise.all([
-        supabase.from("class_enrollments").select("class_id").in("class_id", ids),
-        supabase.from("attendance_records").select("class_id, status").in("class_id", ids).eq("date", date),
-        supabase.from("profiles").select("id, full_name, user_id_text").in("id", teacherIds),
-      ]);
-      const enrollCount: Record<string, number> = {};
-      (enrolls as any[] ?? []).forEach((e) => enrollCount[e.class_id] = (enrollCount[e.class_id] ?? 0) + 1);
-      const attBy: Record<string, { p: number; a: number }> = {};
-      (att as any[] ?? []).forEach((a) => {
-        attBy[a.class_id] = attBy[a.class_id] ?? { p: 0, a: 0 };
-        if (a.status === "present") attBy[a.class_id].p += 1; else attBy[a.class_id].a += 1;
-      });
-      const tMap = new Map((teachers as any[] ?? []).map((t) => [t.id, t.full_name || t.user_id_text]));
-      const result: ClassStat[] = list.map((c) => {
-        const tot = enrollCount[c.id] ?? 0;
-        const at = attBy[c.id] ?? { p: 0, a: 0 };
-        const marked = at.p + at.a;
-        return {
-          id: c.id, name: c.name, semester: c.semester,
-          teacher_name: tMap.get(c.teacher_id) ?? "—",
-          total_students: tot, present: at.p, absent: at.a,
-          pct: marked === 0 ? 0 : Math.round((at.p / marked) * 100),
-        };
-      });
-      setClasses(result); setLoading(false);
-    })();
-  }, [date]);
-
   React.useEffect(() => { loadAccounts(); }, [loadAccounts]);
 
-  async function handleDeleteAccount(account: AccountRow) {
-    if (account.id === user?.id) return toast.error("You cannot delete your own admin account here.");
-    if (!window.confirm(`Delete ${account.full_name || account.user_id_text}'s account?`)) return;
-    setDeletingId(account.id);
-    try {
-      await removeAccount({ data: { userId: account.id } });
-      toast.success("Account deleted");
-      loadAccounts();
-    } catch (err: any) {
-      toast.error(err.message || "Could not delete account");
-    } finally {
-      setDeletingId(null);
-    }
+  async function doLookup(e?: React.FormEvent) {
+    e?.preventDefault();
+    if (!code.trim()) return toast.error("Enter a class code");
+    setLooking(true);
+    setLookup(null);
+    const { data, error } = await supabase.rpc("admin_get_class_by_code", { _code: code.trim() });
+    if (error) { setLooking(false); return toast.error(error.message); }
+    const row = (data as any[])?.[0];
+    if (!row) { setLooking(false); return toast.error("No class with that code"); }
+    // Today's attendance summary for this class
+    const { data: att } = await supabase
+      .from("attendance_records").select("status").eq("class_id", row.id).eq("date", date);
+    const list = (att as any[]) ?? [];
+    const present = list.filter((a) => a.status === "present").length;
+    const absent = list.length - present;
+    const marked = list.length;
+    setLookup({
+      id: row.id, name: row.name, semester: row.semester, academic_year: row.academic_year,
+      class_code: row.class_code, teacher_name: row.teacher_name,
+      total_students: Number(row.total_students), present, absent,
+      pct: marked === 0 ? 0 : Math.round((present / marked) * 100),
+    });
+    setLooking(false);
   }
 
-  const semesters = [...new Set(classes.map((c) => c.semester))].sort();
-  const teachers = [...new Set(classes.map((c) => c.teacher_name))].sort();
+  React.useEffect(() => { if (lookup) doLookup(); /* refresh on date */ }, [date]); // eslint-disable-line
 
-  const filtered = classes.filter((c) =>
-    (!query || c.name.toLowerCase().includes(query.toLowerCase())) &&
-    (!semFilter || c.semester === semFilter) &&
-    (!teacherFilter || c.teacher_name === teacherFilter));
+  async function handleDeleteMine() {
+    if (!window.confirm("Delete your admin account? This cannot be undone.")) return;
+    setDeleting(true);
+    try { await deleteMe(); await signOut(); toast.success("Account deleted"); }
+    catch (err: any) { toast.error(err.message || "Could not delete account"); }
+    finally { setDeleting(false); }
+  }
 
   const filteredAccounts = accounts.filter((a) =>
-    !query ||
-    a.full_name.toLowerCase().includes(query.toLowerCase()) ||
-    a.user_id_text.toLowerCase().includes(query.toLowerCase()) ||
-    a.role.toLowerCase().includes(query.toLowerCase()),
+    !accountQuery ||
+    a.full_name.toLowerCase().includes(accountQuery.toLowerCase()) ||
+    a.user_id_text.toLowerCase().includes(accountQuery.toLowerCase()) ||
+    a.role.toLowerCase().includes(accountQuery.toLowerCase()),
   );
-
-  const totals = {
-    classes: classes.length,
-    students: classes.reduce((s, c) => s + c.total_students, 0),
-  };
 
   return (
     <div className="min-h-screen bg-background pb-6">
       <AppHeader />
       <main className="px-4 pt-4 space-y-4">
-        <div className="grid grid-cols-2 gap-3">
-          <StatCard icon={BookOpen} label="Classes" value={totals.classes} />
-          <StatCard icon={Users} label="Students" value={totals.students} />
-        </div>
-
         <Card className="rounded-2xl p-4 space-y-3">
-          <div className="flex items-center gap-2"><BarChart3 className="h-4 w-4 text-primary" /><p className="text-sm font-bold">Filters</p></div>
-          <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="h-11 rounded-xl" />
-          <div className="grid grid-cols-2 gap-2">
-            <select value={semFilter} onChange={(e) => setSemFilter(e.target.value)} className="h-10 rounded-xl border border-input bg-background px-2 text-sm">
-              <option value="">All semesters</option>
-              {semesters.map((s) => <option key={s} value={s}>Sem {s}</option>)}
-            </select>
-            <select value={teacherFilter} onChange={(e) => setTeacherFilter(e.target.value)} className="h-10 rounded-xl border border-input bg-background px-2 text-sm">
-              <option value="">All teachers</option>
-              {teachers.map((t) => <option key={t} value={t}>{t}</option>)}
-            </select>
-          </div>
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search class" className="h-11 rounded-xl pl-9" />
-          </div>
+          <div className="flex items-center gap-2"><Search className="h-4 w-4 text-primary" /><p className="text-sm font-bold">Look up class by code</p></div>
+          <form onSubmit={doLookup} className="space-y-2">
+            <Input value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} placeholder="e.g. AB12CD" className="h-11 rounded-xl uppercase tracking-wider" />
+            <div className="grid grid-cols-2 gap-2">
+              <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="h-11 rounded-xl" />
+              <Button type="submit" disabled={looking} className="h-11 rounded-xl">
+                {looking ? <Loader2 className="h-4 w-4 animate-spin" /> : "View class"}
+              </Button>
+            </div>
+          </form>
         </Card>
 
-        {loading ? <Loader2 className="mx-auto mt-8 h-6 w-6 animate-spin text-muted-foreground" /> :
-         filtered.length === 0 ? <Card className="rounded-2xl p-8 text-center text-sm text-muted-foreground">No classes found.</Card> :
-         <div className="space-y-3">{filtered.map((c) => <AdminClassCard key={c.id} c={c} />)}</div>}
+        {lookup && (
+          <Card className="card-soft rounded-2xl p-4 space-y-3">
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-base font-bold">{lookup.name}</p>
+                <p className="text-xs text-muted-foreground">{lookup.teacher_name} · Sem {lookup.semester} · {lookup.academic_year}</p>
+                <p className="text-[10px] text-muted-foreground mt-1">Code <span className="font-mono font-bold">{lookup.class_code}</span></p>
+              </div>
+              <div className="rounded-xl px-3 py-1 text-lg font-bold" style={{ background: "oklch(0.95 0.08 145)", color: "oklch(0.45 0.15 145)" }}>{lookup.pct}%</div>
+            </div>
+            <div className="grid grid-cols-3 gap-2 text-center text-xs">
+              <Stat label="Enrolled" value={lookup.total_students} />
+              <Stat label="Present" value={lookup.present} tone="success" />
+              <Stat label="Absent" value={lookup.absent} tone="danger" />
+            </div>
+          </Card>
+        )}
 
         <Card className="rounded-2xl p-4 space-y-3">
           <div className="flex items-center justify-between">
-            <p className="text-sm font-bold">Accounts</p>
+            <div className="flex items-center gap-2"><Users className="h-4 w-4 text-primary" /><p className="text-sm font-bold">Accounts</p></div>
             <span className="text-xs text-muted-foreground">{filteredAccounts.length}</span>
+          </div>
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input value={accountQuery} onChange={(e) => setAccountQuery(e.target.value)} placeholder="Search by name, ID, or role" className="h-11 rounded-xl pl-9" />
           </div>
           {accountsLoading ? <Loader2 className="mx-auto h-5 w-5 animate-spin text-muted-foreground" /> :
            filteredAccounts.length === 0 ? <p className="py-4 text-center text-sm text-muted-foreground">No accounts found.</p> :
@@ -163,45 +142,32 @@ export function AdminApp() {
                   <p className="truncate text-sm font-semibold">{account.full_name || account.user_id_text}</p>
                   <p className="text-xs text-muted-foreground">@{account.user_id_text} · {account.role}</p>
                 </div>
-                <Button size="icon" variant="destructive" disabled={deletingId === account.id || account.id === user?.id} onClick={() => handleDeleteAccount(account)} className="rounded-full">
-                  {deletingId === account.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-                </Button>
+                {account.id === user?.id && <span className="text-[10px] font-bold text-primary">YOU</span>}
               </div>
             ))}
            </div>}
+        </Card>
+
+        <Card className="rounded-2xl p-4 space-y-2">
+          <p className="text-sm font-bold">My account</p>
+          <p className="text-xs text-muted-foreground">{profile?.full_name} · @{profile?.user_id_text} · {role}</p>
+          <Button variant="outline" onClick={signOut} className="h-11 w-full rounded-xl">Log out</Button>
+          <Button variant="destructive" disabled={deleting} onClick={handleDeleteMine} className="h-11 w-full rounded-xl">
+            {deleting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Delete my account
+          </Button>
         </Card>
       </main>
     </div>
   );
 }
 
-function StatCard({ icon: Icon, label, value }: { icon: React.ElementType; label: string; value: number }) {
+function Stat({ label, value, tone }: { label: string; value: number; tone?: "success" | "danger" }) {
+  const bg = tone === "success" ? "oklch(0.96 0.08 145)" : tone === "danger" ? "oklch(0.96 0.06 25)" : undefined;
+  const color = tone === "success" ? "oklch(0.45 0.15 145)" : tone === "danger" ? "oklch(0.50 0.20 25)" : undefined;
   return (
-    <Card className="card-soft rounded-2xl p-4">
-      <Icon className="h-5 w-5 text-primary" />
-      <p className="mt-2 text-2xl font-bold">{value}</p>
-      <p className="text-xs text-muted-foreground">{label}</p>
-    </Card>
-  );
-}
-
-function AdminClassCard({ c }: { c: ClassStat }) {
-  const color = c.pct >= 85 ? "oklch(0.55 0.18 145)" : c.pct >= 75 ? "oklch(0.70 0.16 85)" : "oklch(0.55 0.22 25)";
-  const bg = c.pct >= 85 ? "oklch(0.95 0.08 145)" : c.pct >= 75 ? "oklch(0.96 0.10 85)" : "oklch(0.96 0.06 25)";
-  return (
-    <Card className="card-soft rounded-2xl p-4">
-      <div className="flex items-start justify-between">
-        <div>
-          <p className="text-base font-bold">{c.name}</p>
-          <p className="text-xs text-muted-foreground">{c.teacher_name} · Sem {c.semester}</p>
-        </div>
-        <div className="rounded-xl px-3 py-1 text-lg font-bold" style={{ background: bg, color }}>{c.pct}%</div>
-      </div>
-      <div className="mt-3 grid grid-cols-3 gap-2 text-center text-xs">
-        <div className="rounded-xl bg-secondary p-2"><p className="font-bold">{c.total_students}</p><p className="text-muted-foreground">Enrolled</p></div>
-        <div className="rounded-xl p-2" style={{ background: "oklch(0.96 0.08 145)" }}><p className="font-bold" style={{ color: "oklch(0.45 0.15 145)" }}>{c.present}</p><p className="text-muted-foreground">Present</p></div>
-        <div className="rounded-xl p-2" style={{ background: "oklch(0.96 0.06 25)" }}><p className="font-bold" style={{ color: "oklch(0.50 0.20 25)" }}>{c.absent}</p><p className="text-muted-foreground">Absent</p></div>
-      </div>
-    </Card>
+    <div className="rounded-xl bg-secondary p-2" style={bg ? { background: bg } : undefined}>
+      <p className="font-bold" style={color ? { color } : undefined}>{value}</p>
+      <p className="text-muted-foreground">{label}</p>
+    </div>
   );
 }

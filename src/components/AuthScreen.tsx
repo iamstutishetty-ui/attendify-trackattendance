@@ -30,15 +30,25 @@ export function AuthScreen() {
     try {
       const email = idToEmail(userId);
       if (mode === "signup") {
+        // Pre-check username uniqueness
+        const { data: existing } = await supabase
+          .from("profiles")
+          .select("id")
+          .eq("user_id_text", userId.trim().toLowerCase())
+          .maybeSingle();
+        if (existing) { toast.error("Username already taken"); setBusy(false); return; }
+
         const { data, error } = await supabase.auth.signUp({
           email,
           password,
           options: { emailRedirectTo: `${window.location.origin}/`, data: { user_id_text: userId.trim().toLowerCase(), full_name: fullName.trim() } },
         });
-        if (error) throw error;
+        if (error) {
+          if (error.message.toLowerCase().includes("registered")) throw new Error("Username already taken");
+          throw error;
+        }
         const uid = data.user?.id;
         if (uid) {
-          // Ensure session exists for RLS-protected inserts
           if (!data.session) {
             const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
             if (signInError) throw signInError;
@@ -66,6 +76,7 @@ export function AuthScreen() {
       setBusy(false);
     }
   }
+
 
   return (
     <div className="min-h-screen bg-background">
