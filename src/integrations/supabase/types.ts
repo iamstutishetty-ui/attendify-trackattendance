@@ -205,7 +205,22 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      admin_get_class_by_code: {
+        Args: { _code: string }
+        Returns: {
+          academic_year: string
+          class_code: string
+          id: string
+          name: string
+          semester: string
+          teacher_name: string
+          total_students: number
+        }[]
+      }
+      join_class_by_code: {
+        Args: { _code: string; _roll: string }
+        Returns: string
+      }
     }
     Enums: {
       app_role: "admin" | "teacher" | "student"
