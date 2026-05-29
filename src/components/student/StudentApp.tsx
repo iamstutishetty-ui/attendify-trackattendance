@@ -248,7 +248,14 @@ function CalendarTab() {
       </Card>
     </section>
   );
+}
+
+function Legend({ color, label }: { color: string; label: string }) {
+  return <span className="flex items-center gap-1.5"><span className="h-3 w-3 rounded-sm" style={{ background: color }} />{label}</span>;
+}
+
 function ProfileTab() {
+
   const { profile, role, signOut } = useAuth();
   const { classes } = useStudentClasses();
   const deleteMe = useServerFn(deleteMyAccount);
