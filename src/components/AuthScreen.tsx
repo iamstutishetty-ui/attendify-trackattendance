@@ -30,11 +30,6 @@ export function AuthScreen() {
     try {
       const email = idToEmail(userId);
       if (mode === "signup") {
-        const { data, error } = await supabase.auth.signUp({
-          email,
-          password,
-      const email = idToEmail(userId);
-      if (mode === "signup") {
         // Pre-check username uniqueness
         const { data: existing } = await supabase
           .from("profiles")
@@ -52,7 +47,12 @@ export function AuthScreen() {
           if (error.message.toLowerCase().includes("registered")) throw new Error("Username already taken");
           throw error;
         }
-
+        const uid = data.user?.id;
+        if (uid) {
+          if (!data.session) {
+            const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+            if (signInError) throw signInError;
+          }
           const { error: pErr } = await supabase.from("profiles").insert({
             id: uid, user_id_text: userId.trim().toLowerCase(), full_name: fullName.trim(),
           });
@@ -76,6 +76,7 @@ export function AuthScreen() {
       setBusy(false);
     }
   }
+
 
   return (
     <div className="min-h-screen bg-background">
