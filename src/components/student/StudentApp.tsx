@@ -1,6 +1,8 @@
 import * as React from "react";
+import { useServerFn } from "@tanstack/react-start";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth-context";
+import { deleteMyAccount } from "@/lib/accounts.functions";
 import { AppHeader } from "@/components/AppHeader";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -9,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { LayoutDashboard, CalendarDays, User as UserIcon, Plus, Loader2 } from "lucide-react";
 import { toast } from "sonner";
+
 
 type Tab = "dashboard" | "calendar" | "profile";
 const tabs: { id: Tab; label: string; icon: React.ElementType }[] = [
