@@ -422,33 +422,33 @@ function AttendanceTab() {
 /* -------------------- CALENDAR TAB -------------------- */
 function CalendarTab() {
   const { user } = useAuth();
-  const [classes, setClasses] = React.useState<ClassRow[]>([]);
-  const [activeClass, setActiveClass] = React.useState<string>("");
+  const [classIds, setClassIds] = React.useState<string[]>([]);
   const [events, setEvents] = React.useState<CalendarEventRow[]>([]);
   const [month, setMonth] = React.useState(() => { const d = new Date(); d.setDate(1); return d; });
   const clickTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  React.useEffect(() => {
-    supabase.from("classes").select("*").eq("teacher_id", user!.id).eq("archived", false).then(({ data }) => {
-      const list = (data as ClassRow[]) ?? [];
-      setClasses(list); setActiveClass(list[0]?.id ?? "");
-    });
-  }, [user]);
-
   const load = React.useCallback(async () => {
-    if (!activeClass) return;
-    const { data } = await supabase.from("calendar_events").select("*").eq("class_id", activeClass).order("date");
-    setEvents((data as any[]) ?? []);
-  }, [activeClass]);
+    const { data: cls } = await supabase.from("classes").select("id").eq("teacher_id", user!.id).eq("archived", false);
+    const ids = (cls as any[] ?? []).map((c) => c.id);
+    setClassIds(ids);
+    if (ids.length === 0) { setEvents([]); return; }
+    const { data } = await supabase.from("calendar_events").select("*").in("class_id", ids).order("date");
+    // Deduplicate by date (same mark applied across all classes)
+    const seen = new Map<string, CalendarEventRow>();
+    (data as any[] ?? []).forEach((e) => { if (!seen.has(e.date)) seen.set(e.date, e); });
+    setEvents([...seen.values()]);
+  }, [user]);
   React.useEffect(() => { load(); }, [load]);
 
   async function markDate(date: string, type: "working" | "non_working") {
-    if (!activeClass) return;
-    const { error } = await supabase.from("calendar_events").upsert(
-      { class_id: activeClass, date, type, title: type === "working" ? "Working day" : "Non-working day" },
-      { onConflict: "class_id,date" },
-    );
-    if (error) toast.error(error.message); else { toast.success(type === "working" ? "Marked working day" : "Marked non-working day"); load(); }
+    if (classIds.length === 0) { toast.error("Create a class first"); return; }
+    const rows = classIds.map((cid) => ({
+      class_id: cid, date, type,
+      title: type === "working" ? "Working day" : "Non-working day",
+    }));
+    const { error } = await supabase.from("calendar_events").upsert(rows, { onConflict: "class_id,date" });
+    if (error) toast.error(error.message);
+    else { toast.success(type === "working" ? "Marked working (all classes)" : "Marked non-working (all classes)"); load(); }
   }
   function handleDateClick(date: string) {
     if (clickTimer.current) clearTimeout(clickTimer.current);
@@ -458,11 +458,12 @@ function CalendarTab() {
     if (clickTimer.current) clearTimeout(clickTimer.current);
     markDate(date, "non_working");
   }
-  async function remove(id: string) {
-    await supabase.from("calendar_events").delete().eq("id", id); load();
+  async function removeDate(date: string) {
+    await supabase.from("calendar_events").delete().in("class_id", classIds).eq("date", date);
+    load();
   }
 
-  if (classes.length === 0) return <EmptyState icon={CalendarDays} title="No active classes" text="Create a class first." />;
+  if (classIds.length === 0) return <EmptyState icon={CalendarDays} title="No active classes" text="Create a class first." />;
 
   const eventMap = Object.fromEntries(events.map((e) => [e.date, e]));
   const days = monthCells(month);
@@ -470,10 +471,7 @@ function CalendarTab() {
 
   return (
     <section className="space-y-4">
-      <select value={activeClass} onChange={(e) => setActiveClass(e.target.value)} className="h-11 w-full rounded-xl border border-input bg-card px-3 text-sm font-semibold">
-        {classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-      </select>
-
+      <p className="text-xs text-muted-foreground text-center">Marks apply to <span className="font-bold">all your classes</span></p>
       <Card className="mx-auto w-full max-w-sm rounded-2xl p-3">
         <div className="flex items-center justify-between">
           <button onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))} className="rounded-full bg-secondary px-2.5 py-0.5 text-xs">‹</button>
@@ -497,23 +495,23 @@ function CalendarTab() {
         </div>
       </Card>
 
-
       <div className="space-y-2">
         {events.length === 0 ? <p className="text-center text-sm text-muted-foreground py-6">No events yet</p> :
           events.map((e) => (
-            <Card key={e.id} className="flex items-center gap-3 rounded-2xl p-3">
+            <Card key={e.date} className="flex items-center gap-3 rounded-2xl p-3">
               <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase ${colorOf(e.type)}`}>{e.type}</span>
               <div className="flex-1">
                 <p className="text-sm font-semibold">{e.title || e.type}</p>
                 <p className="text-xs text-muted-foreground">{new Date(e.date).toDateString()}</p>
               </div>
-              <button onClick={() => remove(e.id)}><X className="h-4 w-4 text-muted-foreground" /></button>
+              <button onClick={() => removeDate(e.date)}><X className="h-4 w-4 text-muted-foreground" /></button>
             </Card>
           ))}
       </div>
     </section>
   );
 }
+
 
 /* -------------------- DEFAULTERS TAB -------------------- */
 function DefaultersTab() {
