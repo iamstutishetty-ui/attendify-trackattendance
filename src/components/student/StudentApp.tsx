@@ -285,12 +285,7 @@ function ProfileTab() {
   );
 }
 
-        </div>
-      </Card>
-      <Button variant="destructive" onClick={signOut} className="h-11 w-full rounded-xl">Log out</Button>
-    </section>
-  );
-}
+
 
 function toISODate(d: Date) {
   const y = d.getFullYear(), m = String(d.getMonth()+1).padStart(2,"0"), day = String(d.getDate()).padStart(2,"0");
