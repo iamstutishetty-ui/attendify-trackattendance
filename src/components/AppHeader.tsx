@@ -8,10 +8,16 @@ import { useAuth } from "@/lib/auth-context";
 
 export function AppHeader() {
   const { profile, role, signOut } = useAuth();
-  const [dark, setDark] = React.useState(false);
+  const [dark, setDark] = React.useState(() => {
+    if (typeof window === "undefined") return false;
+    return localStorage.getItem("theme") === "dark";
+  });
 
   React.useEffect(() => {
     document.documentElement.classList.toggle("dark", dark);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("theme", dark ? "dark" : "light");
+    }
   }, [dark]);
 
   return (
