@@ -7,7 +7,13 @@ import { AppHeader } from "@/components/AppHeader";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Loader2, Search, BarChart3, CalendarDays, AlertTriangle, Settings as SettingsIcon } from "lucide-react";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
+import {
+  Loader2, Search, BarChart3, CalendarDays, AlertTriangle,
+  Settings as SettingsIcon, X, Plus,
+} from "lucide-react";
 import { toast } from "sonner";
 
 type Tab = "dashboard" | "calendar" | "defaulters" | "settings";
@@ -19,10 +25,45 @@ const tabs: { id: Tab; label: string; icon: React.ElementType }[] = [
   { id: "settings", label: "Settings", icon: SettingsIcon },
 ];
 
-interface ClassLookup {
-  id: string; name: string; semester: string; academic_year: string;
-  class_code: string; teacher_name: string; total_students: number;
-  present: number; absent: number; pct: number;
+interface SavedClass {
+  id: string;
+  name: string;
+  semester: string;
+  academic_year: string;
+  class_code: string;
+  teacher_name: string;
+  total_students: number;
+}
+
+const STORAGE_KEY = "admin.savedClasses.v1";
+
+function loadSaved(): SavedClass[] {
+  if (typeof window === "undefined") return [];
+  try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]"); }
+  catch { return []; }
+}
+function saveSaved(list: SavedClass[]) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+}
+
+/* shared hook so all tabs see the same list */
+function useSavedClasses() {
+  const [list, setList] = React.useState<SavedClass[]>(() => loadSaved());
+  React.useEffect(() => {
+    const onStorage = () => setList(loadSaved());
+    window.addEventListener("storage", onStorage);
+    window.addEventListener("admin:saved-classes", onStorage);
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener("admin:saved-classes", onStorage);
+    };
+  }, []);
+  const update = (next: SavedClass[]) => {
+    saveSaved(next);
+    setList(next);
+    window.dispatchEvent(new Event("admin:saved-classes"));
+  };
+  return [list, update] as const;
 }
 
 export function AdminApp() {
@@ -55,68 +96,99 @@ export function AdminApp() {
 
 /* -------------------- DASHBOARD -------------------- */
 function DashboardTab() {
+  const [saved, setSaved] = useSavedClasses();
   const [code, setCode] = React.useState("");
   const [date, setDate] = React.useState(new Date().toISOString().slice(0, 10));
-  const [lookup, setLookup] = React.useState<ClassLookup | null>(null);
-  const [looking, setLooking] = React.useState(false);
+  const [adding, setAdding] = React.useState(false);
+  const [stats, setStats] = React.useState<Record<string, { present: number; absent: number; pct: number }>>({});
 
-  async function doLookup(e?: React.FormEvent) {
+  async function addCode(e?: React.FormEvent) {
     e?.preventDefault();
     if (!code.trim()) return toast.error("Enter a class code");
-    setLooking(true);
-    setLookup(null);
+    if (saved.some((s) => s.class_code.toUpperCase() === code.trim().toUpperCase())) {
+      setCode("");
+      return toast.error("Class already added");
+    }
+    setAdding(true);
     const { data, error } = await supabase.rpc("admin_get_class_by_code", { _code: code.trim() });
-    if (error) { setLooking(false); return toast.error(error.message); }
+    setAdding(false);
     const row = (data as any[])?.[0];
-    if (!row) { setLooking(false); return toast.error("No class with that code"); }
-    const { data: att } = await supabase
-      .from("attendance_records").select("status").eq("class_id", row.id).eq("date", date);
-    const list = (att as any[]) ?? [];
-    const present = list.filter((a) => a.status === "present").length;
-    const absent = list.length - present;
-    const marked = list.length;
-    setLookup({
+    if (error || !row) return toast.error(error?.message || "No class with that code");
+    const next: SavedClass = {
       id: row.id, name: row.name, semester: row.semester, academic_year: row.academic_year,
       class_code: row.class_code, teacher_name: row.teacher_name,
-      total_students: Number(row.total_students), present, absent,
-      pct: marked === 0 ? 0 : Math.round((present / marked) * 100),
-    });
-    setLooking(false);
+      total_students: Number(row.total_students),
+    };
+    setSaved([next, ...saved]);
+    setCode("");
+    toast.success("Class added");
   }
 
-  React.useEffect(() => { if (lookup) doLookup(); /* refresh on date */ }, [date]); // eslint-disable-line
+  function removeCode(id: string) {
+    setSaved(saved.filter((s) => s.id !== id));
+  }
+
+  React.useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const out: typeof stats = {};
+      for (const c of saved) {
+        const { data: att } = await supabase
+          .from("attendance_records").select("status").eq("class_id", c.id).eq("date", date);
+        const list = (att as any[]) ?? [];
+        const present = list.filter((a) => a.status === "present").length;
+        const absent = list.length - present;
+        const marked = list.length;
+        out[c.id] = { present, absent, pct: marked === 0 ? 0 : Math.round((present / marked) * 100) };
+      }
+      if (!cancelled) setStats(out);
+    })();
+    return () => { cancelled = true; };
+  }, [saved, date]);
 
   return (
     <section className="space-y-4">
       <Card className="rounded-2xl p-4 space-y-3">
-        <div className="flex items-center gap-2"><Search className="h-4 w-4 text-primary" /><p className="text-sm font-bold">Look up class by code</p></div>
-        <form onSubmit={doLookup} className="space-y-2">
+        <div className="flex items-center gap-2"><Search className="h-4 w-4 text-primary" /><p className="text-sm font-bold">Add class by code</p></div>
+        <form onSubmit={addCode} className="grid grid-cols-[1fr_auto] gap-2">
           <Input value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} placeholder="e.g. AB12CD" className="h-11 rounded-xl uppercase tracking-wider" />
-          <div className="grid grid-cols-2 gap-2">
-            <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="h-11 rounded-xl" />
-            <Button type="submit" disabled={looking} className="h-11 rounded-xl">
-              {looking ? <Loader2 className="h-4 w-4 animate-spin" /> : "View class"}
-            </Button>
-          </div>
+          <Button type="submit" disabled={adding} className="h-11 rounded-xl">
+            {adding ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Plus className="h-4 w-4 mr-1" />Add</>}
+          </Button>
         </form>
+        <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="h-11 rounded-xl" />
       </Card>
 
-      {lookup && (
-        <Card className="card-soft rounded-2xl p-4 space-y-3">
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="text-base font-bold">{lookup.name}</p>
-              <p className="text-xs text-muted-foreground">{lookup.teacher_name} · Sem {lookup.semester} · {lookup.academic_year}</p>
-              <p className="text-[10px] text-muted-foreground mt-1">Code <span className="font-mono font-bold">{lookup.class_code}</span></p>
-            </div>
-            <div className="rounded-xl px-3 py-1 text-lg font-bold" style={{ background: "oklch(0.95 0.08 145)", color: "oklch(0.45 0.15 145)" }}>{lookup.pct}%</div>
-          </div>
-          <div className="grid grid-cols-3 gap-2 text-center text-xs">
-            <Stat label="Enrolled" value={lookup.total_students} />
-            <Stat label="Present" value={lookup.present} tone="success" />
-            <Stat label="Absent" value={lookup.absent} tone="danger" />
-          </div>
-        </Card>
+      {saved.length === 0 ? (
+        <p className="text-center text-xs text-muted-foreground py-8">No classes added yet</p>
+      ) : (
+        <div className="space-y-2">
+          {saved.map((c) => {
+            const s = stats[c.id] ?? { present: 0, absent: 0, pct: 0 };
+            return (
+              <Card key={c.id} className="card-soft rounded-2xl p-4 space-y-3">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="text-base font-bold truncate">{c.name}</p>
+                    <p className="text-xs text-muted-foreground truncate">{c.teacher_name} · Sem {c.semester} · {c.academic_year}</p>
+                    <p className="text-[10px] text-muted-foreground mt-1">Code <span className="font-mono font-bold">{c.class_code}</span></p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="rounded-xl px-3 py-1 text-lg font-bold" style={{ background: "oklch(0.95 0.08 145)", color: "oklch(0.45 0.15 145)" }}>{s.pct}%</div>
+                    <button onClick={() => removeCode(c.id)} className="grid h-8 w-8 place-items-center rounded-lg bg-destructive/10 text-destructive hover:bg-destructive/20" aria-label="Remove">
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+                <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                  <Stat label="Enrolled" value={c.total_students} />
+                  <Stat label="Present" value={s.present} tone="success" />
+                  <Stat label="Absent" value={s.absent} tone="danger" />
+                </div>
+              </Card>
+            );
+          })}
+        </div>
       )}
     </section>
   );
@@ -124,154 +196,158 @@ function DashboardTab() {
 
 /* -------------------- CALENDAR -------------------- */
 function CalendarTab() {
-  const [code, setCode] = React.useState("");
-  const [classInfo, setClassInfo] = React.useState<{ id: string; name: string } | null>(null);
-  const [events, setEvents] = React.useState<{ date: string; type: string; title: string }[]>([]);
+  const [saved] = useSavedClasses();
+  const [selectedId, setSelectedId] = React.useState<string>("");
+  const [events, setEvents] = React.useState<{ date: string; type: string }[]>([]);
   const [month, setMonth] = React.useState(() => { const d = new Date(); d.setDate(1); return d; });
   const [loading, setLoading] = React.useState(false);
 
-  async function lookup(e?: React.FormEvent) {
-    e?.preventDefault();
-    if (!code.trim()) return toast.error("Enter a class code");
+  React.useEffect(() => {
+    if (!selectedId && saved.length > 0) setSelectedId(saved[0].id);
+    if (selectedId && !saved.some((s) => s.id === selectedId)) setSelectedId(saved[0]?.id ?? "");
+  }, [saved, selectedId]);
+
+  React.useEffect(() => {
+    if (!selectedId) { setEvents([]); return; }
     setLoading(true);
-    const { data, error } = await supabase.rpc("admin_get_class_by_code", { _code: code.trim() });
-    const row = (data as any[])?.[0];
-    if (error || !row) { setLoading(false); return toast.error(error?.message || "No class"); }
-    setClassInfo({ id: row.id, name: row.name });
-    const { data: evs } = await supabase.from("calendar_events").select("date, type, title").eq("class_id", row.id);
-    setEvents((evs as any[]) ?? []);
-    setLoading(false);
+    supabase.from("calendar_events").select("date, type").eq("class_id", selectedId)
+      .then(({ data }) => { setEvents((data as any[]) ?? []); setLoading(false); });
+  }, [selectedId]);
+
+  if (saved.length === 0) {
+    return <p className="text-center text-xs text-muted-foreground py-8">Add a class in the Dashboard first.</p>;
   }
 
   const eventMap = Object.fromEntries(events.map((e) => [e.date, e]));
   const days = monthCells(month);
   const colorOf = (t: string) =>
     t === "working" ? "bg-success/20 text-success" :
-    t === "non_working" ? "bg-destructive/15 text-destructive" : "bg-muted text-muted-foreground";
+    t === "non_working" ? "bg-destructive/15 text-destructive" : "";
+
+  const selected = saved.find((s) => s.id === selectedId);
 
   return (
     <section className="space-y-4">
-      <Card className="rounded-2xl p-4 space-y-3">
-        <div className="flex items-center gap-2"><Search className="h-4 w-4 text-primary" /><p className="text-sm font-bold">View calendar by class code</p></div>
-        <form onSubmit={lookup} className="grid grid-cols-[1fr_auto] gap-2">
-          <Input value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} placeholder="Class code" className="h-11 rounded-xl uppercase tracking-wider" />
-          <Button type="submit" disabled={loading} className="h-11 rounded-xl">
-            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Load"}
-          </Button>
-        </form>
-      </Card>
+      <Select value={selectedId} onValueChange={setSelectedId}>
+        <SelectTrigger className="h-11 rounded-xl"><SelectValue placeholder="Select class" /></SelectTrigger>
+        <SelectContent>
+          {saved.map((c) => (
+            <SelectItem key={c.id} value={c.id}>{c.name} · {c.class_code}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
 
-      {classInfo && (
-        <>
-          <p className="text-center text-xs text-muted-foreground">Calendar for <span className="font-bold">{classInfo.name}</span> (read-only, synced with teacher)</p>
-          <Card className="mx-auto w-full max-w-sm rounded-2xl p-3">
-            <div className="flex items-center justify-between">
-              <button onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))} className="rounded-full bg-secondary px-2.5 py-0.5 text-xs">‹</button>
-              <p className="text-sm font-bold">{month.toLocaleDateString("en", { month: "long", year: "numeric" })}</p>
-              <button onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))} className="rounded-full bg-secondary px-2.5 py-0.5 text-xs">›</button>
-            </div>
-            <div className="mt-2 grid grid-cols-7 gap-0.5 text-center text-[9px] text-muted-foreground">
-              {["S","M","T","W","T","F","S"].map((d, i) => <div key={i}>{d}</div>)}
-            </div>
-            <div className="mt-0.5 grid grid-cols-7 gap-0.5">
-              {days.map((cell, i) => {
-                if (!cell) return <div key={i} />;
-                const event = eventMap[cell.iso];
-                return <div key={cell.iso} className={`grid aspect-square place-items-center rounded-lg text-[11px] font-semibold ${event ? colorOf(event.type) : "bg-secondary text-foreground/70"}`}>{cell.d}</div>;
-              })}
-            </div>
-            <div className="mt-2 flex flex-wrap justify-center gap-3 text-[10px]">
-              <Legend color="oklch(0.65 0.18 145)" label="Working" />
-              <Legend color="oklch(0.55 0.22 25)" label="Non-working" />
-            </div>
-          </Card>
-        </>
+      {selected && (
+        <p className="text-center text-xs text-muted-foreground">
+          Synced with <span className="font-bold">{selected.name}</span>
+        </p>
       )}
+
+      <Card className="mx-auto w-full max-w-sm rounded-2xl p-3">
+        <div className="flex items-center justify-between">
+          <button onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))} className="rounded-full bg-secondary px-2.5 py-0.5 text-xs">‹</button>
+          <p className="text-sm font-bold">{month.toLocaleDateString("en", { month: "long", year: "numeric" })}</p>
+          <button onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))} className="rounded-full bg-secondary px-2.5 py-0.5 text-xs">›</button>
+        </div>
+        <div className="mt-2 grid grid-cols-7 gap-0.5 text-center text-[9px] text-muted-foreground">
+          {["S","M","T","W","T","F","S"].map((d, i) => <div key={i}>{d}</div>)}
+        </div>
+        <div className="mt-0.5 grid grid-cols-7 gap-0.5">
+          {days.map((cell, i) => {
+            if (!cell) return <div key={i} />;
+            const event = eventMap[cell.iso];
+            return (
+              <div key={cell.iso} className={`grid aspect-square place-items-center rounded-lg text-[11px] font-semibold ${event ? colorOf(event.type) : "bg-secondary/50 text-muted-foreground"}`}>
+                {cell.d}
+              </div>
+            );
+          })}
+        </div>
+        <div className="mt-2 flex flex-wrap justify-center gap-3 text-[10px]">
+          <Legend color="oklch(0.65 0.18 145)" label="Working" />
+          <Legend color="oklch(0.55 0.22 25)" label="Non-working" />
+        </div>
+        {loading && <p className="text-center text-[10px] text-muted-foreground mt-2">Loading…</p>}
+      </Card>
     </section>
   );
 }
 
 /* -------------------- DEFAULTERS -------------------- */
 function DefaultersTab() {
-  const [code, setCode] = React.useState("");
-  const [classInfo, setClassInfo] = React.useState<{ id: string; name: string } | null>(null);
+  const [saved] = useSavedClasses();
   const [view, setView] = React.useState<"below" | "above">("below");
-  const [rows, setRows] = React.useState<{ id: string; name: string; roll: string; present: number; total: number; pct: number }[]>([]);
+  const [rows, setRows] = React.useState<{ id: string; name: string; roll: string; class_name: string; present: number; total: number; pct: number }[]>([]);
   const [loading, setLoading] = React.useState(false);
 
-  async function lookup(e?: React.FormEvent) {
-    e?.preventDefault();
-    if (!code.trim()) return toast.error("Enter a class code");
-    setLoading(true);
-    const { data, error } = await supabase.rpc("admin_get_class_by_code", { _code: code.trim() });
-    const row = (data as any[])?.[0];
-    if (error || !row) { setLoading(false); return toast.error(error?.message || "No class"); }
-    setClassInfo({ id: row.id, name: row.name });
+  React.useEffect(() => {
+    if (saved.length === 0) { setRows([]); return; }
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      const all: typeof rows = [];
+      for (const c of saved) {
+        const [{ data: enrolls }, { data: att }] = await Promise.all([
+          supabase.from("class_enrollments").select("student_id, roll_number, profiles!class_enrollments_student_id_fkey(full_name, user_id_text)").eq("class_id", c.id),
+          supabase.from("attendance_records").select("student_id, status").eq("class_id", c.id),
+        ]);
+        const byStudent: Record<string, { p: number; t: number }> = {};
+        (att as any[] ?? []).forEach((a) => {
+          byStudent[a.student_id] = byStudent[a.student_id] || { p: 0, t: 0 };
+          byStudent[a.student_id].t += 1;
+          if (a.status === "present") byStudent[a.student_id].p += 1;
+        });
+        (enrolls as any[] ?? []).forEach((e) => {
+          const st = byStudent[e.student_id] ?? { p: 0, t: 0 };
+          all.push({
+            id: `${c.id}:${e.student_id}`,
+            name: e.profiles?.full_name || "Student",
+            roll: e.roll_number || e.profiles?.user_id_text || "",
+            class_name: c.name,
+            present: st.p, total: st.t,
+            pct: st.t === 0 ? 100 : Math.round((st.p / st.t) * 100),
+          });
+        });
+      }
+      if (!cancelled) { setRows(all.sort((a, b) => a.pct - b.pct)); setLoading(false); }
+    })();
+    return () => { cancelled = true; };
+  }, [saved]);
 
-    const [{ data: enrolls }, { data: att }] = await Promise.all([
-      supabase.from("class_enrollments").select("student_id, roll_number, profiles!class_enrollments_student_id_fkey(full_name, user_id_text)").eq("class_id", row.id),
-      supabase.from("attendance_records").select("student_id, status").eq("class_id", row.id),
-    ]);
-    const byStudent: Record<string, { p: number; t: number }> = {};
-    (att as any[] ?? []).forEach((a) => {
-      byStudent[a.student_id] = byStudent[a.student_id] || { p: 0, t: 0 };
-      byStudent[a.student_id].t += 1;
-      if (a.status === "present") byStudent[a.student_id].p += 1;
-    });
-    const list = (enrolls as any[] ?? []).map((e) => {
-      const st = byStudent[e.student_id] ?? { p: 0, t: 0 };
-      return {
-        id: e.student_id,
-        name: e.profiles?.full_name || "Student",
-        roll: e.roll_number || e.profiles?.user_id_text || "",
-        present: st.p, total: st.t,
-        pct: st.t === 0 ? 100 : Math.round((st.p / st.t) * 100),
-      };
-    }).sort((a, b) => a.pct - b.pct);
-    setRows(list);
-    setLoading(false);
+  if (saved.length === 0) {
+    return <p className="text-center text-xs text-muted-foreground py-8">Add a class in the Dashboard first.</p>;
   }
 
-  const filtered = classInfo ? (view === "below" ? rows.filter((r) => r.pct < 75) : rows.filter((r) => r.pct >= 75)) : [];
+  const filtered = view === "below" ? rows.filter((r) => r.pct < 75) : rows.filter((r) => r.pct >= 75);
 
   return (
     <section className="space-y-4">
-      <Card className="rounded-2xl p-4 space-y-3">
-        <div className="flex items-center gap-2"><Search className="h-4 w-4 text-primary" /><p className="text-sm font-bold">Defaulters by class code</p></div>
-        <form onSubmit={lookup} className="grid grid-cols-[1fr_auto] gap-2">
-          <Input value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} placeholder="Class code" className="h-11 rounded-xl uppercase tracking-wider" />
-          <Button type="submit" disabled={loading} className="h-11 rounded-xl">
-            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Load"}
-          </Button>
-        </form>
-      </Card>
-
-      {classInfo && (
-        <>
-          <div className="flex gap-2 rounded-full bg-secondary p-1">
-            {[{ v: "below" as const, l: "Below 75%" }, { v: "above" as const, l: "Above 75%" }].map(({ v, l }) => (
-              <button key={v} onClick={() => setView(v)} className={`flex-1 rounded-full py-1.5 text-xs font-semibold ${view === v ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}>{l}</button>
-            ))}
-          </div>
-          <p className="text-xs text-muted-foreground text-center">Class: <span className="font-bold">{classInfo.name}</span></p>
-          <div className="space-y-2">
-            {filtered.length === 0 ? <p className="text-center text-xs text-muted-foreground py-6">None</p> :
-              filtered.map((r) => {
-                const color = r.pct >= 85 ? "oklch(0.55 0.18 145)" : r.pct >= 75 ? "oklch(0.70 0.16 85)" : "oklch(0.55 0.22 25)";
-                return (
-                  <Card key={r.id} className="rounded-2xl p-3">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm font-semibold">{r.name}</p>
-                        <p className="text-[11px] text-muted-foreground">{r.roll} · {classInfo.name} · {r.present}/{r.total} classes</p>
-                      </div>
-                      <span className="text-lg font-bold" style={{ color }}>{r.pct}%</span>
-                    </div>
-                  </Card>
-                );
-              })}
-          </div>
-        </>
+      <div className="flex gap-2 rounded-full bg-secondary p-1">
+        {[{ v: "below" as const, l: "Below 75%" }, { v: "above" as const, l: "Above 75%" }].map(({ v, l }) => (
+          <button key={v} onClick={() => setView(v)} className={`flex-1 rounded-full py-1.5 text-xs font-semibold ${view === v ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}>{l}</button>
+        ))}
+      </div>
+      {loading ? (
+        <p className="text-center text-xs text-muted-foreground py-6"><Loader2 className="inline h-4 w-4 animate-spin" /></p>
+      ) : filtered.length === 0 ? (
+        <p className="text-center text-xs text-muted-foreground py-6">None</p>
+      ) : (
+        <div className="space-y-2">
+          {filtered.map((r) => {
+            const color = r.pct >= 85 ? "oklch(0.55 0.18 145)" : r.pct >= 75 ? "oklch(0.70 0.16 85)" : "oklch(0.55 0.22 25)";
+            return (
+              <Card key={r.id} className="rounded-2xl p-3">
+                <div className="flex items-center justify-between">
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold truncate">{r.name}</p>
+                    <p className="text-[11px] text-muted-foreground truncate">{r.roll} · {r.class_name} · {r.present}/{r.total} classes</p>
+                  </div>
+                  <span className="text-lg font-bold shrink-0" style={{ color }}>{r.pct}%</span>
+                </div>
+              </Card>
+            );
+          })}
+        </div>
       )}
     </section>
   );
