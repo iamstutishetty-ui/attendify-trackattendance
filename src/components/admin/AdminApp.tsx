@@ -10,9 +10,10 @@ import { Input } from "@/components/ui/input";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   Loader2, Search, BarChart3, CalendarDays, AlertTriangle,
-  Settings as SettingsIcon, X, Plus,
+  Settings as SettingsIcon, X, Plus, Check, XCircle, MinusCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -101,6 +102,7 @@ function DashboardTab() {
   const [date, setDate] = React.useState(new Date().toISOString().slice(0, 10));
   const [adding, setAdding] = React.useState(false);
   const [stats, setStats] = React.useState<Record<string, { present: number; absent: number; pct: number }>>({});
+  const [openClass, setOpenClass] = React.useState<SavedClass | null>(null);
 
   async function addCode(e?: React.FormEvent) {
     e?.preventDefault();
@@ -168,11 +170,11 @@ function DashboardTab() {
             return (
               <Card key={c.id} className="card-soft rounded-2xl p-4 space-y-3">
                 <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
+                  <button onClick={() => setOpenClass(c)} className="min-w-0 text-left flex-1">
                     <p className="text-base font-bold truncate">{c.name}</p>
                     <p className="text-xs text-muted-foreground truncate">{c.teacher_name} · Sem {c.semester} · {c.academic_year}</p>
-                    <p className="text-[10px] text-muted-foreground mt-1">Code <span className="font-mono font-bold">{c.class_code}</span></p>
-                  </div>
+                    <p className="text-[10px] text-muted-foreground mt-1">Code <span className="font-mono font-bold">{c.class_code}</span> · Tap to view students</p>
+                  </button>
                   <div className="flex items-center gap-2">
                     <div className="rounded-xl px-3 py-1 text-lg font-bold" style={{ background: "oklch(0.95 0.08 145)", color: "oklch(0.45 0.15 145)" }}>{s.pct}%</div>
                     <button onClick={() => removeCode(c.id)} className="grid h-8 w-8 place-items-center rounded-lg bg-destructive/10 text-destructive hover:bg-destructive/20" aria-label="Remove">
@@ -180,18 +182,107 @@ function DashboardTab() {
                     </button>
                   </div>
                 </div>
-                <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                <button onClick={() => setOpenClass(c)} className="grid grid-cols-3 gap-2 text-center text-xs w-full">
                   <Stat label="Enrolled" value={c.total_students} />
                   <Stat label="Present" value={s.present} tone="success" />
                   <Stat label="Absent" value={s.absent} tone="danger" />
-                </div>
+                </button>
               </Card>
             );
           })}
         </div>
       )}
+
+      <ClassDetailDialog cls={openClass} initialDate={date} onClose={() => setOpenClass(null)} />
     </section>
   );
+}
+
+/* -------------------- CLASS DETAIL DIALOG -------------------- */
+interface StudentRow { student_id: string; name: string; roll: string; status: "present" | "absent" | "unmarked"; }
+
+function ClassDetailDialog({ cls, initialDate, onClose }: { cls: SavedClass | null; initialDate: string; onClose: () => void }) {
+  const [date, setDate] = React.useState(initialDate);
+  const [rows, setRows] = React.useState<StudentRow[]>([]);
+  const [loading, setLoading] = React.useState(false);
+
+  React.useEffect(() => { setDate(initialDate); }, [initialDate, cls?.id]);
+
+  React.useEffect(() => {
+    if (!cls) return;
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      const [{ data: enrolls }, { data: att }] = await Promise.all([
+        supabase.from("class_enrollments")
+          .select("student_id, roll_number, profiles!class_enrollments_student_id_fkey(full_name, user_id_text)")
+          .eq("class_id", cls.id),
+        supabase.from("attendance_records").select("student_id, status").eq("class_id", cls.id).eq("date", date),
+      ]);
+      const statusBy: Record<string, "present" | "absent"> = {};
+      (att as any[] ?? []).forEach((a) => { statusBy[a.student_id] = a.status as any; });
+      const list: StudentRow[] = (enrolls as any[] ?? []).map((e) => ({
+        student_id: e.student_id,
+        name: e.profiles?.full_name || e.profiles?.user_id_text || "Student",
+        roll: e.roll_number || e.profiles?.user_id_text || "",
+        status: statusBy[e.student_id] ?? "unmarked",
+      })).sort((a, b) => (a.roll || "").localeCompare(b.roll || "", undefined, { numeric: true }));
+      if (!cancelled) { setRows(list); setLoading(false); }
+    })();
+    return () => { cancelled = true; };
+  }, [cls, date]);
+
+  const present = rows.filter((r) => r.status === "present").length;
+  const absent = rows.filter((r) => r.status === "absent").length;
+  const unmarked = rows.filter((r) => r.status === "unmarked").length;
+
+  return (
+    <Dialog open={!!cls} onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent className="max-w-md rounded-2xl max-h-[85vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="truncate">{cls?.name}</DialogTitle>
+          <p className="text-[11px] text-muted-foreground">{cls?.teacher_name} · {cls?.class_code}</p>
+        </DialogHeader>
+
+        <div className="space-y-3">
+          <div>
+            <label className="text-xs text-muted-foreground">Select date</label>
+            <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="h-11 rounded-xl mt-1" />
+          </div>
+
+          <div className="grid grid-cols-3 gap-2 text-center text-xs">
+            <Stat label="Present" value={present} tone="success" />
+            <Stat label="Absent" value={absent} tone="danger" />
+            <Stat label="Unmarked" value={unmarked} />
+          </div>
+
+          {loading ? (
+            <p className="text-center text-xs text-muted-foreground py-6"><Loader2 className="inline h-4 w-4 animate-spin" /></p>
+          ) : rows.length === 0 ? (
+            <p className="text-center text-xs text-muted-foreground py-6">No students enrolled.</p>
+          ) : (
+            <div className="space-y-1.5">
+              {rows.map((r) => (
+                <div key={r.student_id} className="flex items-center justify-between rounded-xl border bg-card px-3 py-2">
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold truncate">{r.name}</p>
+                    <p className="text-[11px] text-muted-foreground truncate">Roll {r.roll || "—"}</p>
+                  </div>
+                  <StatusPill status={r.status} />
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function StatusPill({ status }: { status: "present" | "absent" | "unmarked" }) {
+  if (status === "present") return <span className="flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-bold" style={{ background: "oklch(0.95 0.08 145)", color: "oklch(0.45 0.15 145)" }}><Check className="h-3 w-3" />Present</span>;
+  if (status === "absent") return <span className="flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-bold" style={{ background: "oklch(0.95 0.06 25)", color: "oklch(0.50 0.20 25)" }}><XCircle className="h-3 w-3" />Absent</span>;
+  return <span className="flex items-center gap-1 rounded-full bg-secondary px-2.5 py-0.5 text-[11px] font-bold text-muted-foreground"><MinusCircle className="h-3 w-3" />—</span>;
 }
 
 /* -------------------- CALENDAR -------------------- */
