@@ -160,6 +160,7 @@ export type Database = {
           created_at: string
           full_name: string
           id: string
+          recovery_email: string | null
           updated_at: string
           user_id_text: string
         }
@@ -167,6 +168,7 @@ export type Database = {
           created_at?: string
           full_name?: string
           id: string
+          recovery_email?: string | null
           updated_at?: string
           user_id_text: string
         }
@@ -174,6 +176,7 @@ export type Database = {
           created_at?: string
           full_name?: string
           id?: string
+          recovery_email?: string | null
           updated_at?: string
           user_id_text?: string
         }
