@@ -10,9 +10,10 @@ import { Input } from "@/components/ui/input";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   Loader2, Search, BarChart3, CalendarDays, AlertTriangle,
-  Settings as SettingsIcon, X, Plus,
+  Settings as SettingsIcon, X, Plus, Check, XCircle, MinusCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 
