@@ -10,21 +10,38 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import {
+  Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger,
+} from "@/components/ui/dialog";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
 import {
   Layers, ClipboardCheck, CalendarDays, AlertTriangle, User as UserIcon, Plus,
-  Copy, Archive, ArchiveRestore, Search, Loader2, Check, X, ArrowUpRight, Pencil, Trash2,
+  Copy, Search, Loader2, Check, X, ArrowUpRight, Pencil, Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 
 type Tab = "classes" | "attendance" | "calendar" | "defaulters" | "profile";
+type AttendanceMode = "whole_year" | "two_semester";
 
 interface ClassRow {
   id: string; name: string; semester: string; academic_year: string;
   class_code: string; teacher_id: string; archived: boolean;
+  attendance_mode: AttendanceMode;
 }
 
-interface CalendarEventRow { id: string; date: string; type: string; title: string; }
+const MONTHS = [
+  "January","February","March","April","May","June",
+  "July","August","September","October","November","December",
+];
+
+function academicYearOptions() {
+  const out: string[] = [];
+  for (let y = 2015; y <= 2035; y++) out.push(`${y}-${String(y + 1).slice(-2)}`);
+  return out;
+}
+const YEARS = academicYearOptions();
 
 const tabs: { id: Tab; label: string; icon: React.ElementType }[] = [
   { id: "classes", label: "Classes", icon: Layers },
@@ -67,7 +84,6 @@ export function TeacherApp() {
 function ClassesTab({ onGoToAttendance }: { onGoToAttendance: () => void }) {
   const { user } = useAuth();
   const [classes, setClasses] = React.useState<ClassRow[]>([]);
-  const [showArchived, setShowArchived] = React.useState(false);
   const [open, setOpen] = React.useState(false);
   const [loading, setLoading] = React.useState(true);
 
@@ -80,44 +96,31 @@ function ClassesTab({ onGoToAttendance }: { onGoToAttendance: () => void }) {
 
   React.useEffect(() => { load(); }, [load]);
 
-  const filtered = classes.filter((c) => c.archived === showArchived);
-
   return (
     <section className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-xl font-bold">My classes</h2>
-          <p className="text-xs text-muted-foreground">{filtered.length} {showArchived ? "archived" : "active"}</p>
+          <p className="text-xs text-muted-foreground">{classes.length} total</p>
         </div>
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
             <Button className="rounded-full"><Plus className="mr-1 h-4 w-4" />New</Button>
           </DialogTrigger>
-          <CreateClassDialog onCreated={(created) => { setOpen(false); setShowArchived(false); setClasses((prev) => [created, ...prev.filter((c) => c.id !== created.id)]); load(); }} />
+          <CreateClassDialog onCreated={() => { setOpen(false); load(); }} />
         </Dialog>
       </div>
 
-      <div className="flex gap-2 rounded-full bg-secondary p-1">
-        {[
-          { v: false, l: "Active" }, { v: true, l: "Archived" },
-        ].map(({ v, l }) => (
-          <button key={l} onClick={() => setShowArchived(v)}
-            className={`flex-1 rounded-full py-1.5 text-xs font-semibold ${showArchived === v ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}>
-            {l}
-          </button>
-        ))}
-      </div>
-
       {loading ? <Loader2 className="mx-auto mt-10 h-6 w-6 animate-spin text-muted-foreground" /> :
-       filtered.length === 0 ? (
+       classes.length === 0 ? (
         <Card className="rounded-2xl p-8 text-center">
           <Layers className="mx-auto h-10 w-10 text-muted-foreground" />
-          <p className="mt-3 text-sm font-medium">No {showArchived ? "archived" : "active"} classes</p>
+          <p className="mt-3 text-sm font-medium">No classes yet</p>
           <p className="text-xs text-muted-foreground">Tap "New" to create one</p>
         </Card>
       ) : (
         <div className="space-y-3">
-          {filtered.map((c) => (
+          {classes.map((c) => (
             <ClassCard key={c.id} c={c} onChange={load} onMark={onGoToAttendance} />
           ))}
         </div>
@@ -125,29 +128,19 @@ function ClassesTab({ onGoToAttendance }: { onGoToAttendance: () => void }) {
     </section>
   );
 }
+
 function ClassCard({ c, onChange, onMark }: { c: ClassRow; onChange: () => void; onMark: () => void }) {
   const [count, setCount] = React.useState<number | null>(null);
-  const [editing, setEditing] = React.useState(false);
-  const [name, setName] = React.useState(c.name);
+  const [editOpen, setEditOpen] = React.useState(false);
+  const [promoteOpen, setPromoteOpen] = React.useState(false);
+
   React.useEffect(() => {
     supabase.from("class_enrollments").select("id", { count: "exact", head: true }).eq("class_id", c.id)
       .then(({ count }) => setCount(count ?? 0));
   }, [c.id]);
 
-  async function toggleArchive() {
-    const { error } = await supabase.from("classes").update({ archived: !c.archived }).eq("id", c.id);
-    if (error) toast.error(error.message); else { toast.success(c.archived ? "Restored" : "Archived"); onChange(); }
-  }
-
-  async function saveName() {
-    if (!name.trim() || name === c.name) { setEditing(false); return; }
-    const { error } = await supabase.from("classes").update({ name: name.trim() }).eq("id", c.id);
-    if (error) toast.error(error.message); else { toast.success("Renamed"); setEditing(false); onChange(); }
-  }
-
   async function deleteClass() {
     if (!window.confirm(`Delete class "${c.name}"? This removes enrollments and attendance.`)) return;
-    // Best-effort cascade: clear dependent rows first (RLS lets teacher manage these)
     await supabase.from("attendance_records").delete().eq("class_id", c.id);
     await supabase.from("class_enrollments").delete().eq("class_id", c.id);
     await supabase.from("calendar_events").delete().eq("class_id", c.id);
@@ -155,36 +148,15 @@ function ClassCard({ c, onChange, onMark }: { c: ClassRow; onChange: () => void;
     if (error) toast.error(error.message); else { toast.success("Class deleted"); onChange(); }
   }
 
-  async function promote() {
-    const year = c.academic_year;
-    const m = year.match(/(\d{4})\s*[-–/]\s*(\d{2,4})/);
-    let next = year;
-    if (m) {
-      const a = parseInt(m[1]) + 1;
-      const b = parseInt(m[2].length === 2 ? "20" + m[2] : m[2]) + 1;
-      next = `${a}-${String(b).slice(-2)}`;
-    }
-    const { error } = await supabase.from("classes").update({ academic_year: next, archived: false }).eq("id", c.id);
-    if (error) toast.error(error.message); else { toast.success("Promoted to " + next); onChange(); }
-  }
-
   return (
     <Card className="card-soft rounded-2xl border p-4">
       <div className="flex items-start justify-between gap-2">
         <div className="flex-1 min-w-0">
-          {editing ? (
-            <div className="flex gap-1">
-              <Input value={name} onChange={(e) => setName(e.target.value)} className="h-9 rounded-lg" autoFocus />
-              <Button size="sm" onClick={saveName} className="rounded-lg"><Check className="h-4 w-4" /></Button>
-              <Button size="sm" variant="outline" onClick={() => { setName(c.name); setEditing(false); }} className="rounded-lg"><X className="h-4 w-4" /></Button>
-            </div>
-          ) : (
-            <button onClick={() => setEditing(true)} className="flex items-center gap-2 text-left">
-              <p className="text-base font-bold">{c.name}</p>
-              <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
-            </button>
-          )}
-          <p className="text-xs text-muted-foreground">Sem {c.semester} · {c.academic_year}</p>
+          <p className="text-base font-bold">{c.name}</p>
+          <p className="text-xs text-muted-foreground">
+            Sem {c.semester} · {c.academic_year} ·{" "}
+            {c.attendance_mode === "whole_year" ? "Whole-year" : "2-semester"}
+          </p>
         </div>
         <Badge variant="secondary" className="rounded-full shrink-0">{count ?? "—"} students</Badge>
       </div>
@@ -199,12 +171,17 @@ function ClassCard({ c, onChange, onMark }: { c: ClassRow; onChange: () => void;
         <Button size="sm" variant="default" className="flex-1 rounded-full" onClick={() => { sessionStorage.setItem("activeClass", c.id); onMark(); }}>
           <ClipboardCheck className="mr-1 h-4 w-4" />Mark
         </Button>
-        <Button size="sm" variant="outline" className="rounded-full" onClick={promote} title="Promote year"><ArrowUpRight className="h-4 w-4" /></Button>
-        <Button size="sm" variant="outline" className="rounded-full" onClick={toggleArchive} title={c.archived ? "Restore" : "Archive"}>
-          {c.archived ? <ArchiveRestore className="h-4 w-4" /> : <Archive className="h-4 w-4" />}
-        </Button>
+        <Button size="sm" variant="outline" className="rounded-full" onClick={() => setPromoteOpen(true)} title="Promote"><ArrowUpRight className="h-4 w-4" /></Button>
+        <Button size="sm" variant="outline" className="rounded-full" onClick={() => setEditOpen(true)} title="Edit"><Pencil className="h-4 w-4" /></Button>
         <Button size="sm" variant="destructive" className="rounded-full" onClick={deleteClass} title="Delete"><Trash2 className="h-4 w-4" /></Button>
       </div>
+
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <EditClassDialog c={c} onSaved={() => { setEditOpen(false); onChange(); }} />
+      </Dialog>
+      <Dialog open={promoteOpen} onOpenChange={setPromoteOpen}>
+        <PromoteDialog c={c} onDone={() => { setPromoteOpen(false); onChange(); }} />
+      </Dialog>
     </Card>
   );
 }
@@ -213,38 +190,40 @@ function genCode() {
   return Math.random().toString(36).slice(2, 8).toUpperCase();
 }
 
-function CreateClassDialog({ onCreated }: { onCreated: (created: ClassRow) => void }) {
+/* -------------------- CREATE CLASS DIALOG -------------------- */
+function CreateClassDialog({ onCreated }: { onCreated: () => void }) {
   const { user } = useAuth();
   const [name, setName] = React.useState("");
-  const [sem1, setSem1] = React.useState("");
-  const [sem1Months, setSem1Months] = React.useState("");
-  const [split, setSplit] = React.useState(false);
-  const [sem2, setSem2] = React.useState("");
-  const [sem2Months, setSem2Months] = React.useState("");
   const [year, setYear] = React.useState("2025-26");
+  const [mode, setMode] = React.useState<AttendanceMode>("two_semester");
+  const [sem1, setSem1] = React.useState("1");
+  const [sem1Months, setSem1Months] = React.useState<string[]>([]);
+  const [sem2, setSem2] = React.useState("2");
+  const [sem2Months, setSem2Months] = React.useState<string[]>([]);
+  const [yearSem, setYearSem] = React.useState("1"); // semester label when whole-year
+  const [yearMonths, setYearMonths] = React.useState<string[]>([]);
   const [busy, setBusy] = React.useState(false);
 
-  function semLabel(n: string, months: string) {
-    return months.trim() ? `${n} (${months.trim()})` : n;
+  function semLabel(n: string, months: string[]) {
+    return months.length ? `${n} (${months.map((m) => m.slice(0, 3)).join(", ")})` : n;
   }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (!name || !sem1 || !year) return toast.error("Fill all fields");
-    if (split && !sem2) return toast.error("Enter second semester number");
+    if (!name || !year) return toast.error("Fill all fields");
     setBusy(true);
-    const rows: any[] = [
-      { name, semester: semLabel(sem1, sem1Months), academic_year: year, class_code: genCode(), teacher_id: user!.id },
-    ];
-    if (split) {
-      rows.push({ name, semester: semLabel(sem2, sem2Months), academic_year: year, class_code: genCode(), teacher_id: user!.id });
-    }
-    const { data, error } = await supabase.from("classes").insert(rows).select("*");
+    const rows: any[] =
+      mode === "whole_year"
+        ? [{ name, semester: semLabel(yearSem, yearMonths), academic_year: year, class_code: genCode(), teacher_id: user!.id, attendance_mode: "whole_year" }]
+        : [
+            { name, semester: semLabel(sem1, sem1Months), academic_year: year, class_code: genCode(), teacher_id: user!.id, attendance_mode: "two_semester" },
+            { name, semester: semLabel(sem2, sem2Months), academic_year: year, class_code: genCode(), teacher_id: user!.id, attendance_mode: "two_semester" },
+          ];
+    const { error } = await supabase.from("classes").insert(rows);
     setBusy(false);
     if (error) return toast.error(error.message);
-    const created = (data as ClassRow[]) ?? [];
-    toast.success(split ? `2 classes created` : `Class created · Code ${created[0]?.class_code}`);
-    if (created[0]) onCreated(created[0]);
+    toast.success(mode === "whole_year" ? "Class created" : "2 classes created");
+    onCreated();
   }
 
   return (
@@ -254,36 +233,200 @@ function CreateClassDialog({ onCreated }: { onCreated: (created: ClassRow) => vo
         <DialogDescription>Create a class and share its code with students.</DialogDescription>
       </DialogHeader>
       <form onSubmit={submit} className="space-y-3">
-        <div><Label>Class name</Label><Input value={name} onChange={(e) => setName(e.target.value)} placeholder="SY CSE A" className="rounded-xl h-11" /></div>
-        <div><Label>Academic year</Label><Input value={year} onChange={(e) => setYear(e.target.value)} placeholder="2025-26" className="rounded-xl h-11" /></div>
-        <div className="rounded-xl border p-3 space-y-2">
-          <p className="text-xs font-semibold">Semester 1</p>
-          <div className="grid grid-cols-2 gap-2">
-            <div><Label className="text-xs">Number</Label><Input value={sem1} onChange={(e) => setSem1(e.target.value)} placeholder="3" className="rounded-xl h-10" /></div>
-            <div><Label className="text-xs">Months</Label><Input value={sem1Months} onChange={(e) => setSem1Months(e.target.value)} placeholder="Jul–Nov" className="rounded-xl h-10" /></div>
+        <div>
+          <Label>Class name</Label>
+          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="SY CSE A" className="rounded-xl h-11" />
+        </div>
+        <div>
+          <Label>Academic year</Label>
+          <Select value={year} onValueChange={setYear}>
+            <SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger>
+            <SelectContent>{YEARS.map((y) => <SelectItem key={y} value={y}>{y}</SelectItem>)}</SelectContent>
+          </Select>
+        </div>
+
+        <div>
+          <Label>Attendance structure</Label>
+          <div className="mt-1 grid grid-cols-1 gap-2">
+            {[
+              { v: "whole_year" as const, l: "Mark attendance for whole year" },
+              { v: "two_semester" as const, l: "Mark attendance by 2 semesters" },
+            ].map((o) => (
+              <label key={o.v}
+                className={`flex items-center gap-2 rounded-xl border p-3 text-sm cursor-pointer ${mode === o.v ? "border-primary bg-primary/5" : ""}`}>
+                <input type="radio" name="mode" checked={mode === o.v} onChange={() => setMode(o.v)} />
+                {o.l}
+              </label>
+            ))}
           </div>
         </div>
-        <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" checked={split} onChange={(e) => setSplit(e.target.checked)} className="h-4 w-4" />
-          Split year into 2 semesters (same year)
-        </label>
-        {split && (
+
+        {mode === "whole_year" ? (
           <div className="rounded-xl border p-3 space-y-2">
-            <p className="text-xs font-semibold">Semester 2</p>
+            <p className="text-xs font-semibold">Year details</p>
             <div className="grid grid-cols-2 gap-2">
-              <div><Label className="text-xs">Number</Label><Input value={sem2} onChange={(e) => setSem2(e.target.value)} placeholder="4" className="rounded-xl h-10" /></div>
-              <div><Label className="text-xs">Months</Label><Input value={sem2Months} onChange={(e) => setSem2Months(e.target.value)} placeholder="Dec–Apr" className="rounded-xl h-10" /></div>
+              <div>
+                <Label className="text-xs">Semester label</Label>
+                <Input value={yearSem} onChange={(e) => setYearSem(e.target.value)} placeholder="1" className="rounded-xl h-10" />
+              </div>
+              <div>
+                <Label className="text-xs">Months</Label>
+                <MonthsPicker value={yearMonths} onChange={setYearMonths} />
+              </div>
             </div>
           </div>
+        ) : (
+          <>
+            <div className="rounded-xl border p-3 space-y-2">
+              <p className="text-xs font-semibold">Semester 1</p>
+              <div className="grid grid-cols-2 gap-2">
+                <div><Label className="text-xs">Number</Label><Input value={sem1} onChange={(e) => setSem1(e.target.value)} className="rounded-xl h-10" /></div>
+                <div><Label className="text-xs">Months</Label><MonthsPicker value={sem1Months} onChange={setSem1Months} /></div>
+              </div>
+            </div>
+            <div className="rounded-xl border p-3 space-y-2">
+              <p className="text-xs font-semibold">Semester 2</p>
+              <div className="grid grid-cols-2 gap-2">
+                <div><Label className="text-xs">Number</Label><Input value={sem2} onChange={(e) => setSem2(e.target.value)} className="rounded-xl h-10" /></div>
+                <div><Label className="text-xs">Months</Label><MonthsPicker value={sem2Months} onChange={setSem2Months} /></div>
+              </div>
+            </div>
+          </>
         )}
+
         <Button type="submit" disabled={busy} className="h-11 w-full rounded-xl">
-          {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Create {split ? "classes" : "class"}
+          {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Create
         </Button>
       </form>
     </DialogContent>
   );
 }
 
+function MonthsPicker({ value, onChange }: { value: string[]; onChange: (v: string[]) => void }) {
+  const [open, setOpen] = React.useState(false);
+  function toggle(m: string) {
+    onChange(value.includes(m) ? value.filter((x) => x !== m) : [...value, m]);
+  }
+  return (
+    <div className="relative">
+      <button type="button" onClick={() => setOpen((p) => !p)}
+        className="flex h-10 w-full items-center justify-between rounded-xl border border-input bg-transparent px-3 text-sm">
+        <span className="truncate">{value.length ? value.map((m) => m.slice(0, 3)).join(", ") : "Select"}</span>
+        <span className="ml-2 text-muted-foreground">▾</span>
+      </button>
+      {open && (
+        <div className="absolute z-50 mt-1 w-full max-h-56 overflow-auto rounded-xl border bg-popover p-1 shadow-md">
+          {MONTHS.map((m) => (
+            <button key={m} type="button" onClick={() => toggle(m)}
+              className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-accent ${value.includes(m) ? "font-semibold" : ""}`}>
+              <span className={`grid h-4 w-4 place-items-center rounded border ${value.includes(m) ? "bg-primary text-primary-foreground border-primary" : ""}`}>
+                {value.includes(m) && <Check className="h-3 w-3" />}
+              </span>
+              {m}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* -------------------- EDIT CLASS DIALOG -------------------- */
+function EditClassDialog({ c, onSaved }: { c: ClassRow; onSaved: () => void }) {
+  const [name, setName] = React.useState(c.name);
+  const [year, setYear] = React.useState(c.academic_year);
+  const [busy, setBusy] = React.useState(false);
+  async function save(e: React.FormEvent) {
+    e.preventDefault();
+    if (!name.trim()) return toast.error("Name required");
+    setBusy(true);
+    const { error } = await supabase.from("classes").update({ name: name.trim(), academic_year: year }).eq("id", c.id);
+    setBusy(false);
+    if (error) toast.error(error.message); else { toast.success("Class updated"); onSaved(); }
+  }
+  return (
+    <DialogContent className="rounded-3xl">
+      <DialogHeader>
+        <DialogTitle>Edit class</DialogTitle>
+        <DialogDescription>Update class name or academic year.</DialogDescription>
+      </DialogHeader>
+      <form onSubmit={save} className="space-y-3">
+        <div>
+          <Label>Class name</Label>
+          <Input value={name} onChange={(e) => setName(e.target.value)} className="rounded-xl h-11" />
+        </div>
+        <div>
+          <Label>Academic year</Label>
+          <Select value={year} onValueChange={setYear}>
+            <SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger>
+            <SelectContent>{YEARS.map((y) => <SelectItem key={y} value={y}>{y}</SelectItem>)}</SelectContent>
+          </Select>
+        </div>
+        <Button type="submit" disabled={busy} className="h-11 w-full rounded-xl">
+          {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Save
+        </Button>
+      </form>
+    </DialogContent>
+  );
+}
+
+/* -------------------- PROMOTE DIALOG -------------------- */
+function PromoteDialog({ c, onDone }: { c: ClassRow; onDone: () => void }) {
+  const [busy, setBusy] = React.useState(false);
+  // year mode → pick year; semester mode → pick semester number
+  const defaultYear = (() => {
+    const i = YEARS.indexOf(c.academic_year);
+    return i >= 0 && i + 1 < YEARS.length ? YEARS[i + 1] : c.academic_year;
+  })();
+  const [year, setYear] = React.useState(defaultYear);
+  const semNum = String(parseInt((c.semester.match(/\d+/) || ["1"])[0]) + 1);
+  const [sem, setSem] = React.useState(semNum);
+
+  async function promote() {
+    setBusy(true);
+    const patch =
+      c.attendance_mode === "whole_year"
+        ? { academic_year: year, archived: false }
+        : { semester: sem, archived: false };
+    const { error } = await supabase.from("classes").update(patch).eq("id", c.id);
+    setBusy(false);
+    if (error) toast.error(error.message);
+    else { toast.success("Promoted"); onDone(); }
+  }
+
+  return (
+    <DialogContent className="rounded-3xl">
+      <DialogHeader>
+        <DialogTitle>Promote class</DialogTitle>
+        <DialogDescription>
+          {c.attendance_mode === "whole_year" ? "Select the new academic year." : "Select the new semester."}
+        </DialogDescription>
+      </DialogHeader>
+      <div className="space-y-3">
+        {c.attendance_mode === "whole_year" ? (
+          <div>
+            <Label>Academic year</Label>
+            <Select value={year} onValueChange={setYear}>
+              <SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger>
+              <SelectContent>{YEARS.map((y) => <SelectItem key={y} value={y}>{y}</SelectItem>)}</SelectContent>
+            </Select>
+          </div>
+        ) : (
+          <div>
+            <Label>Semester</Label>
+            <Select value={sem} onValueChange={setSem}>
+              <SelectTrigger className="h-11 rounded-xl"><SelectValue /></SelectTrigger>
+              <SelectContent>{["1","2","3","4","5","6","7","8"].map((s) => <SelectItem key={s} value={s}>Semester {s}</SelectItem>)}</SelectContent>
+            </Select>
+          </div>
+        )}
+        <Button onClick={promote} disabled={busy} className="h-11 w-full rounded-xl">
+          {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Promote
+        </Button>
+      </div>
+    </DialogContent>
+  );
+}
 
 /* -------------------- ATTENDANCE TAB -------------------- */
 function AttendanceTab() {
@@ -298,7 +441,7 @@ function AttendanceTab() {
   const [saving, setSaving] = React.useState(false);
 
   React.useEffect(() => {
-    supabase.from("classes").select("*").eq("teacher_id", user!.id).eq("archived", false).then(({ data }) => {
+    supabase.from("classes").select("*").eq("teacher_id", user!.id).then(({ data }) => {
       const list = (data as ClassRow[]) ?? [];
       setClasses(list);
       const stored = sessionStorage.getItem("activeClass");
@@ -318,14 +461,26 @@ function AttendanceTab() {
       roll: e.roll_number || e.profiles?.user_id_text || "",
     })).sort((a, b) => a.roll.localeCompare(b.roll));
     setStudents(list);
-    const map: Record<string, "present" | "absent"> = {};
-    list.forEach((s) => { map[s.id] = "present"; }); // default present
-    (att as any[] ?? []).forEach((a) => { map[a.student_id] = a.status; });
-    setStatuses(map);
+    setStatuses((prev) => {
+      const map: Record<string, "present" | "absent"> = {};
+      list.forEach((s) => { map[s.id] = prev[s.id] ?? "present"; });
+      (att as any[] ?? []).forEach((a) => { map[a.student_id] = a.status; });
+      return map;
+    });
     setCalendarEvents(Object.fromEntries((events as any[] ?? []).map((e) => [e.date, e.type])));
   }, [activeClass, date]);
 
   React.useEffect(() => { loadData(); }, [loadData]);
+
+  // Realtime: auto-add students when they join
+  React.useEffect(() => {
+    if (!activeClass) return;
+    const ch = supabase
+      .channel(`enrollments:${activeClass}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "class_enrollments", filter: `class_id=eq.${activeClass}` }, () => loadData())
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [activeClass, loadData]);
 
   const filtered = students.filter((s) =>
     s.name.toLowerCase().includes(query.toLowerCase()) || s.roll.toLowerCase().includes(query.toLowerCase()));
@@ -347,7 +502,6 @@ function AttendanceTab() {
     const hasPresent = rows.some((r) => r.status === "present");
     const { error } = await supabase.from("attendance_records").upsert(rows, { onConflict: "class_id,student_id,date" });
     if (!error && hasPresent) {
-      // Auto-sync: if anyone is marked present, this date becomes a working day
       await supabase.from("calendar_events").upsert(
         { class_id: activeClass, date: iso, type: "working", title: "Working day" },
         { onConflict: "class_id,date" },
@@ -359,7 +513,7 @@ function AttendanceTab() {
   }
 
   if (classes.length === 0) {
-    return <EmptyState icon={ClipboardCheck} title="No active classes" text="Create a class first to mark attendance." />;
+    return <EmptyState icon={ClipboardCheck} title="No classes" text="Create a class first to mark attendance." />;
   }
 
   return (
@@ -370,7 +524,6 @@ function AttendanceTab() {
       </select>
 
       <WeeklyStrip date={date} onChange={setDate} events={calendarEvents} />
-
 
       <div className="grid grid-cols-2 gap-2">
         <Card className="rounded-2xl p-3" style={{ background: "oklch(0.95 0.08 145)" }}>
@@ -423,18 +576,17 @@ function AttendanceTab() {
 function CalendarTab() {
   const { user } = useAuth();
   const [classIds, setClassIds] = React.useState<string[]>([]);
-  const [events, setEvents] = React.useState<CalendarEventRow[]>([]);
+  const [events, setEvents] = React.useState<{ date: string; type: string }[]>([]);
   const [month, setMonth] = React.useState(() => { const d = new Date(); d.setDate(1); return d; });
   const clickTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const load = React.useCallback(async () => {
-    const { data: cls } = await supabase.from("classes").select("id").eq("teacher_id", user!.id).eq("archived", false);
+    const { data: cls } = await supabase.from("classes").select("id").eq("teacher_id", user!.id);
     const ids = (cls as any[] ?? []).map((c) => c.id);
     setClassIds(ids);
     if (ids.length === 0) { setEvents([]); return; }
-    const { data } = await supabase.from("calendar_events").select("*").in("class_id", ids).order("date");
-    // Deduplicate by date (same mark applied across all classes)
-    const seen = new Map<string, CalendarEventRow>();
+    const { data } = await supabase.from("calendar_events").select("date, type").in("class_id", ids).order("date");
+    const seen = new Map<string, { date: string; type: string }>();
     (data as any[] ?? []).forEach((e) => { if (!seen.has(e.date)) seen.set(e.date, e); });
     setEvents([...seen.values()]);
   }, [user]);
@@ -448,7 +600,7 @@ function CalendarTab() {
     }));
     const { error } = await supabase.from("calendar_events").upsert(rows, { onConflict: "class_id,date" });
     if (error) toast.error(error.message);
-    else { toast.success(type === "working" ? "Marked working (all classes)" : "Marked non-working (all classes)"); load(); }
+    else { toast.success(type === "working" ? "Marked working" : "Marked non-working"); load(); }
   }
   function handleDateClick(date: string) {
     if (clickTimer.current) clearTimeout(clickTimer.current);
@@ -458,12 +610,8 @@ function CalendarTab() {
     if (clickTimer.current) clearTimeout(clickTimer.current);
     markDate(date, "non_working");
   }
-  async function removeDate(date: string) {
-    await supabase.from("calendar_events").delete().in("class_id", classIds).eq("date", date);
-    load();
-  }
 
-  if (classIds.length === 0) return <EmptyState icon={CalendarDays} title="No active classes" text="Create a class first." />;
+  if (classIds.length === 0) return <EmptyState icon={CalendarDays} title="No classes" text="Create a class first." />;
 
   const eventMap = Object.fromEntries(events.map((e) => [e.date, e]));
   const days = monthCells(month);
@@ -494,52 +642,33 @@ function CalendarTab() {
           <Legend color="var(--destructive)" label="Non-working" />
         </div>
       </Card>
-
-      <div className="space-y-2">
-        {events.length === 0 ? <p className="text-center text-sm text-muted-foreground py-6">No events yet</p> :
-          events.map((e) => (
-            <Card key={e.date} className="flex items-center gap-3 rounded-2xl p-3">
-              <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase ${colorOf(e.type)}`}>{e.type}</span>
-              <div className="flex-1">
-                <p className="text-sm font-semibold">{e.title || e.type}</p>
-                <p className="text-xs text-muted-foreground">{new Date(e.date).toDateString()}</p>
-              </div>
-              <button onClick={() => removeDate(e.date)}><X className="h-4 w-4 text-muted-foreground" /></button>
-            </Card>
-          ))}
-      </div>
     </section>
   );
 }
 
-
 /* -------------------- DEFAULTERS TAB -------------------- */
 function DefaultersTab() {
-
   const { user } = useAuth();
   const [classes, setClasses] = React.useState<ClassRow[]>([]);
-  const [semester, setSemester] = React.useState<string>("");
-  const [view, setView] = React.useState<"below" | "above">("below");
   const [rows, setRows] = React.useState<{ id: string; name: string; roll: string; cls: string; present: number; total: number; pct: number }[]>([]);
+  const [view, setView] = React.useState<"below" | "above">("below");
+  const [loading, setLoading] = React.useState(true);
 
   React.useEffect(() => {
-    supabase.from("classes").select("*").eq("teacher_id", user!.id).eq("archived", false).then(({ data }) => {
-      const list = (data as ClassRow[]) ?? [];
-      setClasses(list);
-      if (list.length && !semester) setSemester(list[0].semester);
-    });
-  }, [user]); // eslint-disable-line
-
-  React.useEffect(() => {
-    if (!semester) return;
-    const targetIds = classes.filter((c) => c.semester === semester).map((c) => c.id);
-    if (targetIds.length === 0) { setRows([]); return; }
+    let cancelled = false;
     (async () => {
+      setLoading(true);
+      const { data: cls } = await supabase.from("classes").select("*").eq("teacher_id", user!.id);
+      const list = (cls as ClassRow[]) ?? [];
+      setClasses(list);
+      if (list.length === 0) { setRows([]); setLoading(false); return; }
+      const ids = list.map((c) => c.id);
+      const clsMap = new Map(list.map((c) => [c.id, c]));
       const [{ data: enrolls }, { data: att }] = await Promise.all([
-        supabase.from("class_enrollments").select("class_id, student_id, roll_number, profiles!class_enrollments_student_id_fkey(full_name, user_id_text)").in("class_id", targetIds),
-        supabase.from("attendance_records").select("class_id, student_id, status").in("class_id", targetIds),
+        supabase.from("class_enrollments").select("class_id, student_id, roll_number, profiles!class_enrollments_student_id_fkey(full_name, user_id_text)").in("class_id", ids),
+        supabase.from("attendance_records").select("class_id, student_id, status").in("class_id", ids),
       ]);
-      const clsMap = new Map(classes.map((c) => [c.id, c.name]));
+      // For whole_year mode: aggregate across all classes that share the same name + year + whole_year
       const byKey: Record<string, { p: number; t: number }> = {};
       (att as any[] ?? []).forEach((a) => {
         const k = `${a.class_id}:${a.student_id}`;
@@ -547,62 +676,56 @@ function DefaultersTab() {
         byKey[k].t += 1;
         if (a.status === "present") byKey[k].p += 1;
       });
-      const list = (enrolls as any[] ?? []).map((e) => {
+      const all = (enrolls as any[] ?? []).map((e) => {
+        const c = clsMap.get(e.class_id);
         const st = byKey[`${e.class_id}:${e.student_id}`] ?? { p: 0, t: 0 };
         return {
           id: `${e.class_id}:${e.student_id}`,
           name: e.profiles?.full_name || "Student",
           roll: e.roll_number || e.profiles?.user_id_text || "",
-          cls: clsMap.get(e.class_id) || "",
+          cls: c ? `${c.name} · Sem ${c.semester}` : "",
           present: st.p, total: st.t,
           pct: st.t === 0 ? 100 : Math.round((st.p / st.t) * 100),
         };
       }).sort((a, b) => a.pct - b.pct);
-      setRows(list);
+      if (!cancelled) { setRows(all); setLoading(false); }
     })();
-  }, [semester, classes]);
+    return () => { cancelled = true; };
+  }, [user]);
 
-  if (classes.length === 0) return <EmptyState icon={AlertTriangle} title="No active classes" text="Create a class first." />;
-  const semesters = [...new Set(classes.map((c) => c.semester))];
+  if (!loading && classes.length === 0) return <EmptyState icon={AlertTriangle} title="No classes" text="Create a class first." />;
   const filtered = view === "below" ? rows.filter((r) => r.pct < 75) : rows.filter((r) => r.pct >= 75);
 
   return (
     <section className="space-y-4">
-      <select value={semester} onChange={(e) => setSemester(e.target.value)} className="h-11 w-full rounded-xl border border-input bg-card px-3 text-sm font-semibold">
-        {semesters.map((s) => <option key={s} value={s}>Sem {s}</option>)}
-      </select>
       <div className="flex gap-2 rounded-full bg-secondary p-1">
         {[{ v: "below" as const, l: "Below 75%" }, { v: "above" as const, l: "Above 75%" }].map(({ v, l }) => (
           <button key={v} onClick={() => setView(v)} className={`flex-1 rounded-full py-1.5 text-xs font-semibold ${view === v ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}>{l}</button>
         ))}
       </div>
-      <Section title={`${view === "below" ? "Below" : "Above"} 75% (${filtered.length})`} rows={filtered} danger={view === "below"} />
-    </section>
-  );
-}
-
-function Section({ title, rows, danger }: { title: string; rows: any[]; danger?: boolean }) {
-  return (
-    <div className="space-y-2">
-      <h3 className={`text-sm font-bold ${danger ? "text-destructive" : ""}`}>{title}</h3>
-      {rows.length === 0 ? <p className="text-xs text-muted-foreground">None</p> :
-        rows.map((r) => {
-          const need = r.pct < 75 ? Math.ceil((0.75 * r.total - r.present) / 0.25) : 0;
-          const color = r.pct >= 85 ? "oklch(0.55 0.18 145)" : r.pct >= 75 ? "oklch(0.70 0.16 85)" : "oklch(0.55 0.22 25)";
-          return (
-            <Card key={r.id} className="rounded-2xl p-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-semibold">{r.name}</p>
-                  <p className="text-[11px] text-muted-foreground">{r.roll}{r.cls ? ` · ${r.cls}` : ""} · {r.present}/{r.total} classes</p>
+      {loading ? (
+        <p className="text-center text-xs text-muted-foreground py-6"><Loader2 className="inline h-4 w-4 animate-spin" /></p>
+      ) : filtered.length === 0 ? (
+        <p className="text-center text-xs text-muted-foreground py-6">None</p>
+      ) : (
+        <div className="space-y-2">
+          {filtered.map((r) => {
+            const color = r.pct >= 85 ? "oklch(0.55 0.18 145)" : r.pct >= 75 ? "oklch(0.70 0.16 85)" : "oklch(0.55 0.22 25)";
+            return (
+              <Card key={r.id} className="rounded-2xl p-3">
+                <div className="flex items-center justify-between">
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold truncate">{r.name}</p>
+                    <p className="text-[11px] text-muted-foreground truncate">{r.roll}{r.cls ? ` · ${r.cls}` : ""} · {r.present}/{r.total} classes</p>
+                  </div>
+                  <span className="text-lg font-bold shrink-0" style={{ color }}>{r.pct}%</span>
                 </div>
-                <span className="text-lg font-bold" style={{ color }}>{r.pct}%</span>
-              </div>
-              {need > 0 && <p className="mt-1 text-[11px] text-destructive">Need {need} more present to reach 75%</p>}
-            </Card>
-          );
-        })}
-    </div>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -634,8 +757,6 @@ function ProfileTab() {
     </section>
   );
 }
-
-
 
 /* helpers */
 type MonthCell = { d: number; iso: string } | null;
@@ -727,37 +848,20 @@ function WeeklyStrip({ date, onChange, events }: { date: Date; onChange: (d: Dat
             const isOff = type === "non_working";
             const isWork = type === "working";
             const isToday = iso === todayIso;
-            const wd = d.toLocaleDateString("en", { weekday: "short" }).slice(0, 3);
             return (
-              <motion.button
+              <button
                 key={iso}
                 onClick={() => onChange(d)}
-                whileTap={{ scale: 0.92 }}
-                animate={{ height: selected ? 96 : 72 }}
-                transition={{ type: "spring", stiffness: 260, damping: 22 }}
-                className={`flex flex-1 flex-col items-center justify-between rounded-full py-3 transition-colors ${
-                  selected
-                    ? "bg-gradient-to-b from-[oklch(0.65_0.18_260)] to-[oklch(0.55_0.22_270)] text-white shadow-lg shadow-primary/25"
-                    : isOff
-                    ? "bg-[oklch(0.93_0.06_25)] text-[oklch(0.55_0.20_25)]"
-                    : isWork
-                    ? "bg-[oklch(0.93_0.08_155)] text-[oklch(0.40_0.15_155)]"
-                    : "bg-white/70 text-muted-foreground"
+                className={`flex w-10 flex-col items-center gap-1 rounded-2xl py-2 transition ${
+                  selected ? "bg-primary text-primary-foreground shadow-md" :
+                  isOff ? "bg-destructive/10 text-destructive" :
+                  isWork ? "bg-success/15 text-success" :
+                  "bg-white/70 text-foreground/70 hover:bg-white"
                 }`}
               >
-                <span className="text-[10px] font-bold uppercase tracking-wide opacity-90">{wd}</span>
-                <span
-                  className={`grid place-items-center rounded-full text-sm font-extrabold ${
-                    selected
-                      ? "h-9 w-9 bg-white text-[oklch(0.55_0.22_270)]"
-                      : isToday
-                      ? "h-8 w-8 ring-2 ring-primary/50"
-                      : "h-8 w-8"
-                  }`}
-                >
-                  {d.getDate()}
-                </span>
-              </motion.button>
+                <span className="text-[10px] uppercase opacity-75">{d.toLocaleDateString("en", { weekday: "short" }).slice(0, 3)}</span>
+                <span className={`text-sm font-bold ${isToday && !selected ? "underline" : ""}`}>{d.getDate()}</span>
+              </button>
             );
           })}
         </motion.div>
@@ -765,4 +869,3 @@ function WeeklyStrip({ date, onChange, events }: { date: Date; onChange: (d: Dat
     </Card>
   );
 }
-

@@ -1,0 +1,2 @@
+ALTER TABLE public.classes ADD COLUMN IF NOT EXISTS attendance_mode text NOT NULL DEFAULT 'two_semester';
+ALTER TABLE public.classes ADD CONSTRAINT classes_attendance_mode_chk CHECK (attendance_mode IN ('whole_year','two_semester'));

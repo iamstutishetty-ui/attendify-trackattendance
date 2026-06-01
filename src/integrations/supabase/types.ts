@@ -126,6 +126,7 @@ export type Database = {
         Row: {
           academic_year: string
           archived: boolean
+          attendance_mode: string
           class_code: string
           created_at: string
           id: string
@@ -136,6 +137,7 @@ export type Database = {
         Insert: {
           academic_year: string
           archived?: boolean
+          attendance_mode?: string
           class_code: string
           created_at?: string
           id?: string
@@ -146,6 +148,7 @@ export type Database = {
         Update: {
           academic_year?: string
           archived?: boolean
+          attendance_mode?: string
           class_code?: string
           created_at?: string
           id?: string
