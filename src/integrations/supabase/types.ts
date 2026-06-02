@@ -129,9 +129,13 @@ export type Database = {
           attendance_mode: string
           class_code: string
           created_at: string
+          current_phase: number
           id: string
+          months: string[]
+          months_secondary: string[] | null
           name: string
           semester: string
+          semester_secondary: string | null
           teacher_id: string
         }
         Insert: {
@@ -140,9 +144,13 @@ export type Database = {
           attendance_mode?: string
           class_code: string
           created_at?: string
+          current_phase?: number
           id?: string
+          months?: string[]
+          months_secondary?: string[] | null
           name: string
           semester: string
+          semester_secondary?: string | null
           teacher_id: string
         }
         Update: {
@@ -151,9 +159,13 @@ export type Database = {
           attendance_mode?: string
           class_code?: string
           created_at?: string
+          current_phase?: number
           id?: string
+          months?: string[]
+          months_secondary?: string[] | null
           name?: string
           semester?: string
+          semester_secondary?: string | null
           teacher_id?: string
         }
         Relationships: []
