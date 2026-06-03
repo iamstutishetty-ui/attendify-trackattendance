@@ -197,6 +197,8 @@ function CalendarTab() {
     });
   }, [user]);
 
+  const [eventMap, setEventMap] = React.useState<Map<string, string>>(new Map());
+
   React.useEffect(() => {
     if (!activeClass) return;
     Promise.all([
@@ -206,6 +208,9 @@ function CalendarTab() {
       const m = new Map<string, "present" | "absent">();
       (att as any[] ?? []).forEach((a) => m.set(a.date, a.status));
       setAttMap(m);
+      const em = new Map<string, string>();
+      (ev as any[] ?? []).forEach((e) => em.set(e.date, e.type));
+      setEventMap(em);
       const h = new Set<string>();
       (ev as any[] ?? []).forEach((e) => { if (e.type === "holiday" || e.type === "non_working") h.add(e.date); });
       setHolidays(h);
@@ -243,8 +248,9 @@ function CalendarTab() {
           {days.map((cell, i) => {
             if (!cell) return <div key={i} />;
             const status = attMap.get(cell.iso);
-            const isHoliday = holidays.has(cell.iso);
-            const cls = isHoliday ? "bg-[oklch(0.92_0.16_85)] text-[oklch(0.40_0.15_85)]"
+            const ev = eventMap.get(cell.iso);
+            const cls = ev === "college_event" ? "bg-[oklch(0.80_0.15_250)] text-[oklch(0.30_0.18_250)]"
+              : ev === "non_working" || ev === "holiday" ? "bg-[oklch(0.92_0.16_85)] text-[oklch(0.40_0.15_85)]"
               : status === "present" ? "bg-[oklch(0.85_0.18_145)] text-[oklch(0.30_0.15_145)]"
               : status === "absent" ? "bg-destructive/20 text-destructive"
               : "bg-secondary text-foreground/70";
@@ -254,7 +260,8 @@ function CalendarTab() {
         <div className="mt-3 flex flex-wrap gap-3 text-[11px]">
           <Legend color="oklch(0.85 0.18 145)" label="Present" />
           <Legend color="oklch(0.75 0.20 25)" label="Absent" />
-          <Legend color="oklch(0.92 0.16 85)" label="Holiday" />
+          <Legend color="oklch(0.92 0.16 85)" label="Non-working" />
+          <Legend color="oklch(0.80 0.15 250)" label="College event" />
         </div>
       </Card>
     </section>
