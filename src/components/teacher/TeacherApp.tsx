@@ -462,7 +462,7 @@ function AttendanceTab() {
   const [activeClass, setActiveClass] = React.useState<string>("");
   const [date, setDate] = React.useState(() => { const d = new Date(); d.setHours(0,0,0,0); return d; });
   const [students, setStudents] = React.useState<{ id: string; name: string; roll: string }[]>([]);
-  const [statuses, setStatuses] = React.useState<Record<string, "present" | "absent">>({});
+  const [statuses, setStatuses] = React.useState<Record<string, "present" | "absent" | undefined>>({});
   const [calendarEvents, setCalendarEvents] = React.useState<Record<string, string>>({});
   const [query, setQuery] = React.useState("");
   const [saving, setSaving] = React.useState(false);
@@ -500,12 +500,11 @@ function AttendanceTab() {
       };
     }).sort((a, b) => a.roll.localeCompare(b.roll));
     setStudents(list);
-    setStatuses((prev) => {
-      const map: Record<string, "present" | "absent"> = {};
-      list.forEach((s) => { map[s.id] = prev[s.id] ?? "present"; });
-      ((attRes.data as any[]) ?? []).forEach((a) => { map[a.student_id] = a.status; });
-      return map;
-    });
+    // Start everyone unmarked; only saved DB records assign a status.
+    const map: Record<string, "present" | "absent" | undefined> = {};
+    list.forEach((s) => { map[s.id] = undefined; });
+    ((attRes.data as any[]) ?? []).forEach((a) => { map[a.student_id] = a.status; });
+    setStatuses(map);
     setCalendarEvents(Object.fromEntries(((eventsRes.data as any[]) ?? []).map((e) => [e.date, e.type])));
   }, [activeClass, date]);
 
@@ -526,18 +525,24 @@ function AttendanceTab() {
     s.name.toLowerCase().includes(query.toLowerCase()) || s.roll.toLowerCase().includes(query.toLowerCase()));
 
   const presentCount = students.filter((s) => statuses[s.id] === "present").length;
-  const absentCount = students.length - presentCount;
+  const absentCount = students.filter((s) => statuses[s.id] === "absent").length;
 
   function toggle(id: string) {
-    setStatuses((p) => ({ ...p, [id]: p[id] === "present" ? "absent" : "present" }));
+    setStatuses((p) => {
+      const cur = p[id];
+      const next: "present" | "absent" = cur === undefined ? "present" : cur === "present" ? "absent" : "present";
+      return { ...p, [id]: next };
+    });
   }
 
   async function save() {
-    if (!activeClass || students.length === 0) return;
+    if (!activeClass) return;
+    const marked = students.filter((s) => statuses[s.id] !== undefined);
+    if (marked.length === 0) { toast.error("Mark at least one student"); return; }
     setSaving(true);
     const iso = toISODate(date);
-    const rows = students.map((s) => ({
-      class_id: activeClass, student_id: s.id, date: iso, status: statuses[s.id] ?? "present", marked_by: user!.id,
+    const rows = marked.map((s) => ({
+      class_id: activeClass, student_id: s.id, date: iso, status: statuses[s.id]!, marked_by: user!.id,
     }));
     const hasPresent = rows.some((r) => r.status === "present");
     const { error } = await supabase.from("attendance_records").upsert(rows, { onConflict: "class_id,student_id,date" });
