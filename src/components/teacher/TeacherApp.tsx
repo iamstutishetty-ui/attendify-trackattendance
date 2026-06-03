@@ -600,16 +600,24 @@ function AttendanceTab() {
       ) : (
         <div className="space-y-2">
           {filtered.map((s) => {
-            const present = statuses[s.id] === "present";
+            const st = statuses[s.id];
+            const tone = st === "present"
+              ? "border-[oklch(0.65_0.18_145)]/40 bg-[oklch(0.97_0.06_145)] dark:bg-[oklch(0.30_0.08_145)]"
+              : st === "absent"
+              ? "border-destructive/40 bg-destructive/5"
+              : "border-border bg-card";
+            const badge = st === "present"
+              ? "bg-[oklch(0.65_0.18_145)] text-white"
+              : st === "absent"
+              ? "bg-destructive text-destructive-foreground"
+              : "bg-secondary text-muted-foreground";
             return (
               <button key={s.id} onClick={() => toggle(s.id)}
-                className={`flex w-full items-center gap-3 rounded-2xl border p-3 text-left transition ${
-                  present ? "border-[oklch(0.65_0.18_145)]/40 bg-[oklch(0.97_0.06_145)]" : "border-destructive/40 bg-destructive/5"
-                }`}>
+                className={`flex w-full items-center gap-3 rounded-2xl border p-3 text-left transition ${tone}`}>
                 <span className="font-mono text-xs font-semibold text-muted-foreground w-16 shrink-0">{s.roll}</span>
                 <span className="flex-1 text-sm font-semibold">{s.name}</span>
-                <span className={`grid h-9 w-9 place-items-center rounded-full ${present ? "bg-[oklch(0.65_0.18_145)] text-white" : "bg-destructive text-destructive-foreground"}`}>
-                  {present ? <Check className="h-5 w-5" /> : <X className="h-5 w-5" />}
+                <span className={`grid h-9 w-9 place-items-center rounded-full ${badge}`}>
+                  {st === "present" ? <Check className="h-5 w-5" /> : st === "absent" ? <X className="h-5 w-5" /> : <span className="text-xs">—</span>}
                 </span>
               </button>
             );
