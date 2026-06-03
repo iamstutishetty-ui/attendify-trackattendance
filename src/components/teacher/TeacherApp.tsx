@@ -766,8 +766,8 @@ function DefaultersTab() {
           name: p?.full_name || p?.user_id_text || "Student",
           roll: e.roll_number || p?.user_id_text || "",
           cls: c ? `${c.name}` : "",
-          present: st.p, total: st.t,
-          pct: st.t === 0 ? 100 : Math.round((st.p / st.t) * 100),
+          present, total,
+          pct: total === 0 ? 0 : Math.round((present / total) * 100),
         };
       }).sort((a, b) => a.pct - b.pct);
       if (!cancelled) { setRows(all); setLoading(false); }
