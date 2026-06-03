@@ -884,18 +884,18 @@ function WeeklyStrip({ date, onChange, events }: { date: Date; onChange: (d: Dat
   }
 
   return (
-    <Card className="overflow-hidden rounded-3xl p-4" style={{ background: "oklch(0.98 0.015 250)" }}>
+    <Card className="overflow-hidden rounded-3xl p-4 bg-card">
       <div className="mb-3 flex items-center justify-between">
-        <button onClick={() => shiftWeek(-1)} className="grid h-8 w-8 place-items-center rounded-full bg-white/80 text-muted-foreground shadow-sm transition hover:bg-white">‹</button>
+        <button onClick={() => shiftWeek(-1)} className="grid h-8 w-8 place-items-center rounded-full bg-secondary text-foreground shadow-sm transition hover:bg-secondary/80">‹</button>
         <motion.p
           key={toISODate(date)}
           initial={{ opacity: 0, y: -4 }}
           animate={{ opacity: 1, y: 0 }}
-          className="text-center text-sm font-semibold"
+          className="text-center text-sm font-semibold text-foreground"
         >
           {date.toLocaleDateString("en", { weekday: "long", month: "long", day: "numeric", year: "numeric" })}
         </motion.p>
-        <button onClick={() => shiftWeek(1)} className="grid h-8 w-8 place-items-center rounded-full bg-white/80 text-muted-foreground shadow-sm transition hover:bg-white">›</button>
+        <button onClick={() => shiftWeek(1)} className="grid h-8 w-8 place-items-center rounded-full bg-secondary text-foreground shadow-sm transition hover:bg-secondary/80">›</button>
       </div>
       <div className="relative touch-pan-y">
         <motion.div
@@ -925,9 +925,9 @@ function WeeklyStrip({ date, onChange, events }: { date: Date; onChange: (d: Dat
                 onClick={() => onChange(d)}
                 className={`flex w-10 flex-col items-center gap-1 rounded-2xl py-2 transition ${
                   selected ? "bg-primary text-primary-foreground shadow-md" :
-                  isOff ? "bg-destructive/10 text-destructive" :
+                  isOff ? "bg-destructive/15 text-destructive" :
                   isWork ? "bg-success/15 text-success" :
-                  "bg-white/70 text-foreground/70 hover:bg-white"
+                  "bg-secondary text-foreground hover:bg-secondary/80"
                 }`}
               >
                 <span className="text-[10px] uppercase opacity-75">{d.toLocaleDateString("en", { weekday: "short" }).slice(0, 3)}</span>
