@@ -60,20 +60,31 @@ function useStudentClasses() {
       .eq("student_id", user!.id);
     const classIds = (enrolls as any[] ?? []).map((e) => e.class_id);
     if (classIds.length === 0) { setClasses([]); setLoading(false); return; }
-    const [{ data: att }, { data: teacherProfiles }] = await Promise.all([
-      supabase.from("attendance_records").select("class_id, status").eq("student_id", user!.id).in("class_id", classIds),
+    const [{ data: att }, { data: events }, { data: teacherProfiles }] = await Promise.all([
+      supabase.from("attendance_records").select("class_id, status, date").eq("student_id", user!.id).in("class_id", classIds),
+      supabase.from("calendar_events").select("class_id, date, type").in("class_id", classIds),
       supabase.from("profiles").select("id, full_name, user_id_text").in("id", (enrolls as any[]).map((e) => e.classes?.teacher_id).filter(Boolean)),
     ]);
     const teacherMap = new Map((teacherProfiles as any[] ?? []).map((p) => [p.id, p.full_name || p.user_id_text]));
+    // Working days per class — only 'working' events count
+    const workingByClass: Record<string, Set<string>> = {};
+    (events as any[] ?? []).forEach((e) => {
+      if (e.type !== "working") return;
+      (workingByClass[e.class_id] ||= new Set()).add(e.date);
+    });
+    // Include any attendance date as a fallback working day
+    (att as any[] ?? []).forEach((a) => {
+      (workingByClass[a.class_id] ||= new Set()).add(a.date);
+    });
     const result: ClassInfo[] = (enrolls as any[]).map((e) => {
       const cAtt = (att as any[] ?? []).filter((a) => a.class_id === e.class_id);
       const present = cAtt.filter((a) => a.status === "present").length;
-      const total = cAtt.length;
+      const total = workingByClass[e.class_id]?.size ?? 0;
       return {
         id: e.class_id, name: e.classes?.name ?? "Class",
         teacher_name: teacherMap.get(e.classes?.teacher_id) ?? "—",
-        present, absent: total - present, total,
-        pct: total === 0 ? 100 : Math.round((present / total) * 100),
+        present, absent: Math.max(0, total - present), total,
+        pct: total === 0 ? 0 : Math.round((present / total) * 100),
       };
     });
     setClasses(result);
