@@ -410,25 +410,29 @@ function DefaultersTab() {
       setLoading(true);
       const all: typeof rows = [];
       for (const c of saved) {
-        const [{ data: enrolls }, { data: att }] = await Promise.all([
+        const [{ data: enrolls }, { data: att }, { data: ev }] = await Promise.all([
           supabase.from("class_enrollments").select("student_id, roll_number, profiles!class_enrollments_student_id_fkey(full_name, user_id_text)").eq("class_id", c.id),
-          supabase.from("attendance_records").select("student_id, status").eq("class_id", c.id),
+          supabase.from("attendance_records").select("student_id, status, date").eq("class_id", c.id),
+          supabase.from("calendar_events").select("date, type").eq("class_id", c.id),
         ]);
-        const byStudent: Record<string, { p: number; t: number }> = {};
+        // Working days only — exclude non_working & college_event
+        const workingDays = new Set<string>();
+        (ev as any[] ?? []).forEach((e) => { if (e.type === "working") workingDays.add(e.date); });
+        (att as any[] ?? []).forEach((a) => workingDays.add(a.date));
+        const total = workingDays.size;
+        const presentBy: Record<string, number> = {};
         (att as any[] ?? []).forEach((a) => {
-          byStudent[a.student_id] = byStudent[a.student_id] || { p: 0, t: 0 };
-          byStudent[a.student_id].t += 1;
-          if (a.status === "present") byStudent[a.student_id].p += 1;
+          if (a.status === "present") presentBy[a.student_id] = (presentBy[a.student_id] || 0) + 1;
         });
         (enrolls as any[] ?? []).forEach((e) => {
-          const st = byStudent[e.student_id] ?? { p: 0, t: 0 };
+          const present = presentBy[e.student_id] ?? 0;
           all.push({
             id: `${c.id}:${e.student_id}`,
             name: e.profiles?.full_name || "Student",
             roll: e.roll_number || e.profiles?.user_id_text || "",
             class_name: c.name,
-            present: st.p, total: st.t,
-            pct: st.t === 0 ? 100 : Math.round((st.p / st.t) * 100),
+            present, total,
+            pct: total === 0 ? 0 : Math.round((present / total) * 100),
           });
         });
       }
