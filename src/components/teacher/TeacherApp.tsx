@@ -728,9 +728,10 @@ function DefaultersTab() {
       if (list.length === 0) { setRows([]); setLoading(false); return; }
       const ids = list.map((c) => c.id);
       const clsMap = new Map(list.map((c) => [c.id, c]));
-      const [enrollsRes, attRes] = await Promise.all([
+      const [enrollsRes, attRes, evRes] = await Promise.all([
         supabase.from("class_enrollments").select("class_id, student_id, roll_number").in("class_id", ids),
-        supabase.from("attendance_records").select("class_id, student_id, status").in("class_id", ids),
+        supabase.from("attendance_records").select("class_id, student_id, status, date").in("class_id", ids),
+        supabase.from("calendar_events").select("class_id, date, type").in("class_id", ids),
       ]);
       const enrolls = (enrollsRes.data as any[]) ?? [];
       const studentIds = Array.from(new Set(enrolls.map((e) => e.student_id)));
@@ -739,17 +740,27 @@ function DefaultersTab() {
         const { data: profs } = await supabase.from("profiles").select("id, full_name, user_id_text").in("id", studentIds);
         profileMap = new Map((profs as any[] ?? []).map((p) => [p.id, p]));
       }
-      const byKey: Record<string, { p: number; t: number }> = {};
+      // Working days per class = dates with type='working' (exclude non_working & college_event)
+      const workingByClass: Record<string, Set<string>> = {};
+      ((evRes.data as any[]) ?? []).forEach((e) => {
+        if (e.type !== "working") return;
+        (workingByClass[e.class_id] ||= new Set()).add(e.date);
+      });
+      // Also include any attendance dates as fallback working days
       ((attRes.data as any[]) ?? []).forEach((a) => {
+        (workingByClass[a.class_id] ||= new Set()).add(a.date);
+      });
+      const presentByKey: Record<string, number> = {};
+      ((attRes.data as any[]) ?? []).forEach((a) => {
+        if (a.status !== "present") return;
         const k = `${a.class_id}:${a.student_id}`;
-        byKey[k] = byKey[k] || { p: 0, t: 0 };
-        byKey[k].t += 1;
-        if (a.status === "present") byKey[k].p += 1;
+        presentByKey[k] = (presentByKey[k] || 0) + 1;
       });
       const all = enrolls.map((e) => {
         const c = clsMap.get(e.class_id);
         const p = profileMap.get(e.student_id);
-        const st = byKey[`${e.class_id}:${e.student_id}`] ?? { p: 0, t: 0 };
+        const present = presentByKey[`${e.class_id}:${e.student_id}`] ?? 0;
+        const total = workingByClass[e.class_id]?.size ?? 0;
         return {
           id: `${e.class_id}:${e.student_id}`,
           name: p?.full_name || p?.user_id_text || "Student",
