@@ -462,7 +462,7 @@ function AttendanceTab() {
   const [activeClass, setActiveClass] = React.useState<string>("");
   const [date, setDate] = React.useState(() => { const d = new Date(); d.setHours(0,0,0,0); return d; });
   const [students, setStudents] = React.useState<{ id: string; name: string; roll: string }[]>([]);
-  const [statuses, setStatuses] = React.useState<Record<string, "present" | "absent">>({});
+  const [statuses, setStatuses] = React.useState<Record<string, "present" | "absent" | undefined>>({});
   const [calendarEvents, setCalendarEvents] = React.useState<Record<string, string>>({});
   const [query, setQuery] = React.useState("");
   const [saving, setSaving] = React.useState(false);
@@ -500,12 +500,11 @@ function AttendanceTab() {
       };
     }).sort((a, b) => a.roll.localeCompare(b.roll));
     setStudents(list);
-    setStatuses((prev) => {
-      const map: Record<string, "present" | "absent"> = {};
-      list.forEach((s) => { map[s.id] = prev[s.id] ?? "present"; });
-      ((attRes.data as any[]) ?? []).forEach((a) => { map[a.student_id] = a.status; });
-      return map;
-    });
+    // Start everyone unmarked; only saved DB records assign a status.
+    const map: Record<string, "present" | "absent" | undefined> = {};
+    list.forEach((s) => { map[s.id] = undefined; });
+    ((attRes.data as any[]) ?? []).forEach((a) => { map[a.student_id] = a.status; });
+    setStatuses(map);
     setCalendarEvents(Object.fromEntries(((eventsRes.data as any[]) ?? []).map((e) => [e.date, e.type])));
   }, [activeClass, date]);
 
@@ -526,18 +525,24 @@ function AttendanceTab() {
     s.name.toLowerCase().includes(query.toLowerCase()) || s.roll.toLowerCase().includes(query.toLowerCase()));
 
   const presentCount = students.filter((s) => statuses[s.id] === "present").length;
-  const absentCount = students.length - presentCount;
+  const absentCount = students.filter((s) => statuses[s.id] === "absent").length;
 
   function toggle(id: string) {
-    setStatuses((p) => ({ ...p, [id]: p[id] === "present" ? "absent" : "present" }));
+    setStatuses((p) => {
+      const cur = p[id];
+      const next: "present" | "absent" = cur === undefined ? "present" : cur === "present" ? "absent" : "present";
+      return { ...p, [id]: next };
+    });
   }
 
   async function save() {
-    if (!activeClass || students.length === 0) return;
+    if (!activeClass) return;
+    const marked = students.filter((s) => statuses[s.id] !== undefined);
+    if (marked.length === 0) { toast.error("Mark at least one student"); return; }
     setSaving(true);
     const iso = toISODate(date);
-    const rows = students.map((s) => ({
-      class_id: activeClass, student_id: s.id, date: iso, status: statuses[s.id] ?? "present", marked_by: user!.id,
+    const rows = marked.map((s) => ({
+      class_id: activeClass, student_id: s.id, date: iso, status: statuses[s.id]!, marked_by: user!.id,
     }));
     const hasPresent = rows.some((r) => r.status === "present");
     const { error } = await supabase.from("attendance_records").upsert(rows, { onConflict: "class_id,student_id,date" });
@@ -595,16 +600,24 @@ function AttendanceTab() {
       ) : (
         <div className="space-y-2">
           {filtered.map((s) => {
-            const present = statuses[s.id] === "present";
+            const st = statuses[s.id];
+            const tone = st === "present"
+              ? "border-[oklch(0.65_0.18_145)]/40 bg-[oklch(0.97_0.06_145)] dark:bg-[oklch(0.30_0.08_145)]"
+              : st === "absent"
+              ? "border-destructive/40 bg-destructive/5"
+              : "border-border bg-card";
+            const badge = st === "present"
+              ? "bg-[oklch(0.65_0.18_145)] text-white"
+              : st === "absent"
+              ? "bg-destructive text-destructive-foreground"
+              : "bg-secondary text-muted-foreground";
             return (
               <button key={s.id} onClick={() => toggle(s.id)}
-                className={`flex w-full items-center gap-3 rounded-2xl border p-3 text-left transition ${
-                  present ? "border-[oklch(0.65_0.18_145)]/40 bg-[oklch(0.97_0.06_145)]" : "border-destructive/40 bg-destructive/5"
-                }`}>
+                className={`flex w-full items-center gap-3 rounded-2xl border p-3 text-left transition ${tone}`}>
                 <span className="font-mono text-xs font-semibold text-muted-foreground w-16 shrink-0">{s.roll}</span>
                 <span className="flex-1 text-sm font-semibold">{s.name}</span>
-                <span className={`grid h-9 w-9 place-items-center rounded-full ${present ? "bg-[oklch(0.65_0.18_145)] text-white" : "bg-destructive text-destructive-foreground"}`}>
-                  {present ? <Check className="h-5 w-5" /> : <X className="h-5 w-5" />}
+                <span className={`grid h-9 w-9 place-items-center rounded-full ${badge}`}>
+                  {st === "present" ? <Check className="h-5 w-5" /> : st === "absent" ? <X className="h-5 w-5" /> : <span className="text-xs">—</span>}
                 </span>
               </button>
             );
@@ -715,9 +728,10 @@ function DefaultersTab() {
       if (list.length === 0) { setRows([]); setLoading(false); return; }
       const ids = list.map((c) => c.id);
       const clsMap = new Map(list.map((c) => [c.id, c]));
-      const [enrollsRes, attRes] = await Promise.all([
+      const [enrollsRes, attRes, evRes] = await Promise.all([
         supabase.from("class_enrollments").select("class_id, student_id, roll_number").in("class_id", ids),
-        supabase.from("attendance_records").select("class_id, student_id, status").in("class_id", ids),
+        supabase.from("attendance_records").select("class_id, student_id, status, date").in("class_id", ids),
+        supabase.from("calendar_events").select("class_id, date, type").in("class_id", ids),
       ]);
       const enrolls = (enrollsRes.data as any[]) ?? [];
       const studentIds = Array.from(new Set(enrolls.map((e) => e.student_id)));
@@ -726,24 +740,34 @@ function DefaultersTab() {
         const { data: profs } = await supabase.from("profiles").select("id, full_name, user_id_text").in("id", studentIds);
         profileMap = new Map((profs as any[] ?? []).map((p) => [p.id, p]));
       }
-      const byKey: Record<string, { p: number; t: number }> = {};
+      // Working days per class = dates with type='working' (exclude non_working & college_event)
+      const workingByClass: Record<string, Set<string>> = {};
+      ((evRes.data as any[]) ?? []).forEach((e) => {
+        if (e.type !== "working") return;
+        (workingByClass[e.class_id] ||= new Set()).add(e.date);
+      });
+      // Also include any attendance dates as fallback working days
       ((attRes.data as any[]) ?? []).forEach((a) => {
+        (workingByClass[a.class_id] ||= new Set()).add(a.date);
+      });
+      const presentByKey: Record<string, number> = {};
+      ((attRes.data as any[]) ?? []).forEach((a) => {
+        if (a.status !== "present") return;
         const k = `${a.class_id}:${a.student_id}`;
-        byKey[k] = byKey[k] || { p: 0, t: 0 };
-        byKey[k].t += 1;
-        if (a.status === "present") byKey[k].p += 1;
+        presentByKey[k] = (presentByKey[k] || 0) + 1;
       });
       const all = enrolls.map((e) => {
         const c = clsMap.get(e.class_id);
         const p = profileMap.get(e.student_id);
-        const st = byKey[`${e.class_id}:${e.student_id}`] ?? { p: 0, t: 0 };
+        const present = presentByKey[`${e.class_id}:${e.student_id}`] ?? 0;
+        const total = workingByClass[e.class_id]?.size ?? 0;
         return {
           id: `${e.class_id}:${e.student_id}`,
           name: p?.full_name || p?.user_id_text || "Student",
           roll: e.roll_number || p?.user_id_text || "",
           cls: c ? `${c.name}` : "",
-          present: st.p, total: st.t,
-          pct: st.t === 0 ? 100 : Math.round((st.p / st.t) * 100),
+          present, total,
+          pct: total === 0 ? 0 : Math.round((present / total) * 100),
         };
       }).sort((a, b) => a.pct - b.pct);
       if (!cancelled) { setRows(all); setLoading(false); }
@@ -871,18 +895,18 @@ function WeeklyStrip({ date, onChange, events }: { date: Date; onChange: (d: Dat
   }
 
   return (
-    <Card className="overflow-hidden rounded-3xl p-4" style={{ background: "oklch(0.98 0.015 250)" }}>
+    <Card className="overflow-hidden rounded-3xl p-4 bg-card">
       <div className="mb-3 flex items-center justify-between">
-        <button onClick={() => shiftWeek(-1)} className="grid h-8 w-8 place-items-center rounded-full bg-white/80 text-muted-foreground shadow-sm transition hover:bg-white">‹</button>
+        <button onClick={() => shiftWeek(-1)} className="grid h-8 w-8 place-items-center rounded-full bg-secondary text-foreground shadow-sm transition hover:bg-secondary/80">‹</button>
         <motion.p
           key={toISODate(date)}
           initial={{ opacity: 0, y: -4 }}
           animate={{ opacity: 1, y: 0 }}
-          className="text-center text-sm font-semibold"
+          className="text-center text-sm font-semibold text-foreground"
         >
           {date.toLocaleDateString("en", { weekday: "long", month: "long", day: "numeric", year: "numeric" })}
         </motion.p>
-        <button onClick={() => shiftWeek(1)} className="grid h-8 w-8 place-items-center rounded-full bg-white/80 text-muted-foreground shadow-sm transition hover:bg-white">›</button>
+        <button onClick={() => shiftWeek(1)} className="grid h-8 w-8 place-items-center rounded-full bg-secondary text-foreground shadow-sm transition hover:bg-secondary/80">›</button>
       </div>
       <div className="relative touch-pan-y">
         <motion.div
@@ -912,9 +936,9 @@ function WeeklyStrip({ date, onChange, events }: { date: Date; onChange: (d: Dat
                 onClick={() => onChange(d)}
                 className={`flex w-10 flex-col items-center gap-1 rounded-2xl py-2 transition ${
                   selected ? "bg-primary text-primary-foreground shadow-md" :
-                  isOff ? "bg-destructive/10 text-destructive" :
+                  isOff ? "bg-destructive/15 text-destructive" :
                   isWork ? "bg-success/15 text-success" :
-                  "bg-white/70 text-foreground/70 hover:bg-white"
+                  "bg-secondary text-foreground hover:bg-secondary/80"
                 }`}
               >
                 <span className="text-[10px] uppercase opacity-75">{d.toLocaleDateString("en", { weekday: "short" }).slice(0, 3)}</span>
