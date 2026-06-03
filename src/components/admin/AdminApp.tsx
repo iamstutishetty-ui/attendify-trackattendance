@@ -303,78 +303,94 @@ function StatusPill({ status }: { status: "present" | "absent" | "unmarked" }) {
 
 /* -------------------- CALENDAR -------------------- */
 function CalendarTab() {
-  const [saved] = useSavedClasses();
-  const [selectedId, setSelectedId] = React.useState<string>("");
-  const [events, setEvents] = React.useState<{ date: string; type: string }[]>([]);
+  const [allClassIds, setAllClassIds] = React.useState<string[]>([]);
+  const [events, setEvents] = React.useState<Record<string, string>>({}); // date -> type
   const [month, setMonth] = React.useState(() => { const d = new Date(); d.setDate(1); return d; });
-  const [loading, setLoading] = React.useState(false);
+  const [busy, setBusy] = React.useState(false);
 
+  const loadAll = React.useCallback(async () => {
+    const { data: cls } = await supabase.from("classes").select("id");
+    const ids = (cls as any[] ?? []).map((c) => c.id);
+    setAllClassIds(ids);
+    if (ids.length === 0) { setEvents({}); return; }
+    const { data } = await supabase.from("calendar_events").select("date, type, class_id").in("class_id", ids);
+    // Aggregate per date — priority: college_event > non_working > working
+    const priority: Record<string, number> = { working: 1, non_working: 2, college_event: 3 };
+    const out: Record<string, string> = {};
+    (data as any[] ?? []).forEach((e) => {
+      const cur = out[e.date];
+      if (!cur || (priority[e.type] ?? 0) > (priority[cur] ?? 0)) out[e.date] = e.type;
+    });
+    setEvents(out);
+  }, []);
+
+  React.useEffect(() => { loadAll(); }, [loadAll]);
+
+  // Realtime: re-aggregate when anything changes (teacher attendance writes working days too)
   React.useEffect(() => {
-    if (!selectedId && saved.length > 0) setSelectedId(saved[0].id);
-    if (selectedId && !saved.some((s) => s.id === selectedId)) setSelectedId(saved[0]?.id ?? "");
-  }, [saved, selectedId]);
+    const ch = supabase.channel("admin-cal-all")
+      .on("postgres_changes", { event: "*", schema: "public", table: "calendar_events" }, () => loadAll())
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [loadAll]);
 
-  React.useEffect(() => {
-    if (!selectedId) { setEvents([]); return; }
-    setLoading(true);
-    supabase.from("calendar_events").select("date, type").eq("class_id", selectedId)
-      .then(({ data }) => { setEvents((data as any[]) ?? []); setLoading(false); });
-  }, [selectedId]);
-
-  if (saved.length === 0) {
-    return <p className="text-center text-xs text-muted-foreground py-8">Add a class in the Dashboard first.</p>;
+  async function cycleDate(iso: string) {
+    if (allClassIds.length === 0) { toast.error("No classes yet"); return; }
+    const cur = events[iso];
+    // none → working → non_working → college_event → none
+    const next: "working" | "non_working" | "college_event" | null =
+      !cur ? "working" :
+      cur === "working" ? "non_working" :
+      cur === "non_working" ? "college_event" :
+      null;
+    setBusy(true);
+    if (next === null) {
+      await supabase.from("calendar_events").delete().in("class_id", allClassIds).eq("date", iso);
+    } else {
+      const title = next === "working" ? "Working day" : next === "non_working" ? "Non-working" : "College event";
+      const rows = allClassIds.map((cid) => ({ class_id: cid, date: iso, type: next, title }));
+      await supabase.from("calendar_events").upsert(rows, { onConflict: "class_id,date" });
+    }
+    setBusy(false);
+    loadAll();
   }
 
-  const eventMap = Object.fromEntries(events.map((e) => [e.date, e]));
   const days = monthCells(month);
-  const colorOf = (t: string) =>
+  const colorOf = (t: string | undefined) =>
     t === "working" ? "bg-success/20 text-success" :
-    t === "non_working" ? "bg-destructive/15 text-destructive" : "";
-
-  const selected = saved.find((s) => s.id === selectedId);
+    t === "non_working" ? "bg-destructive/15 text-destructive" :
+    t === "college_event" ? "bg-[oklch(0.80_0.15_250)] text-[oklch(0.30_0.18_250)]" :
+    "bg-secondary text-foreground/70";
 
   return (
     <section className="space-y-4">
-      <Select value={selectedId} onValueChange={setSelectedId}>
-        <SelectTrigger className="h-11 rounded-xl"><SelectValue placeholder="Select class" /></SelectTrigger>
-        <SelectContent>
-          {saved.map((c) => (
-            <SelectItem key={c.id} value={c.id}>{c.name} · {c.class_code}</SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-
-      {selected && (
-        <p className="text-center text-xs text-muted-foreground">
-          Synced with <span className="font-bold">{selected.name}</span>
-        </p>
-      )}
-
+      <p className="text-center text-xs text-muted-foreground">Applies to <span className="font-bold">all classes</span></p>
       <Card className="mx-auto w-full max-w-sm rounded-2xl p-3">
         <div className="flex items-center justify-between">
           <button onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))} className="rounded-full bg-secondary px-2.5 py-0.5 text-xs">‹</button>
           <p className="text-sm font-bold">{month.toLocaleDateString("en", { month: "long", year: "numeric" })}</p>
           <button onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))} className="rounded-full bg-secondary px-2.5 py-0.5 text-xs">›</button>
         </div>
+        <p className="mt-1 text-center text-[10px] text-muted-foreground">Tap to cycle: Working → Non-working → College event → Clear</p>
         <div className="mt-2 grid grid-cols-7 gap-0.5 text-center text-[9px] text-muted-foreground">
           {["S","M","T","W","T","F","S"].map((d, i) => <div key={i}>{d}</div>)}
         </div>
         <div className="mt-0.5 grid grid-cols-7 gap-0.5">
           {days.map((cell, i) => {
             if (!cell) return <div key={i} />;
-            const event = eventMap[cell.iso];
             return (
-              <div key={cell.iso} className={`grid aspect-square place-items-center rounded-lg text-[11px] font-semibold ${event ? colorOf(event.type) : "bg-secondary/50 text-muted-foreground"}`}>
+              <button key={cell.iso} disabled={busy} onClick={() => cycleDate(cell.iso)}
+                className={`grid aspect-square place-items-center rounded-lg text-[11px] font-semibold transition ${colorOf(events[cell.iso])}`}>
                 {cell.d}
-              </div>
+              </button>
             );
           })}
         </div>
         <div className="mt-2 flex flex-wrap justify-center gap-3 text-[10px]">
           <Legend color="oklch(0.65 0.18 145)" label="Working" />
           <Legend color="oklch(0.55 0.22 25)" label="Non-working" />
+          <Legend color="oklch(0.70 0.18 250)" label="College event" />
         </div>
-        {loading && <p className="text-center text-[10px] text-muted-foreground mt-2">Loading…</p>}
       </Card>
     </section>
   );
