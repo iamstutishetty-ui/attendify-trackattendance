@@ -215,29 +215,38 @@ function ClassDetailDialog({ cls, initialDate, onClose }: { cls: SavedClass | nu
 
   React.useEffect(() => { setDate(initialDate); }, [initialDate, cls?.id]);
 
+  const loadDetail = React.useCallback(async () => {
+    if (!cls) return;
+    setLoading(true);
+    const [{ data: enrolls }, { data: att }] = await Promise.all([
+      supabase.from("class_enrollments")
+        .select("student_id, roll_number, profiles!class_enrollments_student_id_fkey(full_name, user_id_text)")
+        .eq("class_id", cls.id),
+      supabase.from("attendance_records").select("student_id, status").eq("class_id", cls.id).eq("date", date),
+    ]);
+    const statusBy: Record<string, "present" | "absent"> = {};
+    (att as any[] ?? []).forEach((a) => { statusBy[a.student_id] = a.status as any; });
+    const list: StudentRow[] = (enrolls as any[] ?? []).map((e) => ({
+      student_id: e.student_id,
+      name: e.profiles?.full_name || e.profiles?.user_id_text || "Student",
+      roll: e.roll_number || e.profiles?.user_id_text || "",
+      status: statusBy[e.student_id] ?? "unmarked",
+    })).sort((a, b) => (a.roll || "").localeCompare(b.roll || "", undefined, { numeric: true }));
+    setRows(list);
+    setLoading(false);
+  }, [cls, date]);
+
+  React.useEffect(() => { loadDetail(); }, [loadDetail]);
+
+  // Realtime sync attendance changes for this class
   React.useEffect(() => {
     if (!cls) return;
-    let cancelled = false;
-    (async () => {
-      setLoading(true);
-      const [{ data: enrolls }, { data: att }] = await Promise.all([
-        supabase.from("class_enrollments")
-          .select("student_id, roll_number, profiles!class_enrollments_student_id_fkey(full_name, user_id_text)")
-          .eq("class_id", cls.id),
-        supabase.from("attendance_records").select("student_id, status").eq("class_id", cls.id).eq("date", date),
-      ]);
-      const statusBy: Record<string, "present" | "absent"> = {};
-      (att as any[] ?? []).forEach((a) => { statusBy[a.student_id] = a.status as any; });
-      const list: StudentRow[] = (enrolls as any[] ?? []).map((e) => ({
-        student_id: e.student_id,
-        name: e.profiles?.full_name || e.profiles?.user_id_text || "Student",
-        roll: e.roll_number || e.profiles?.user_id_text || "",
-        status: statusBy[e.student_id] ?? "unmarked",
-      })).sort((a, b) => (a.roll || "").localeCompare(b.roll || "", undefined, { numeric: true }));
-      if (!cancelled) { setRows(list); setLoading(false); }
-    })();
-    return () => { cancelled = true; };
-  }, [cls, date]);
+    const ch = supabase.channel(`admin-detail:${cls.id}:${date}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "attendance_records", filter: `class_id=eq.${cls.id}` }, () => loadDetail())
+      .on("postgres_changes", { event: "*", schema: "public", table: "class_enrollments", filter: `class_id=eq.${cls.id}` }, () => loadDetail())
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [cls, date, loadDetail]);
 
   const present = rows.filter((r) => r.status === "present").length;
   const absent = rows.filter((r) => r.status === "absent").length;
