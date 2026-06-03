@@ -130,23 +130,30 @@ function DashboardTab() {
     setSaved(saved.filter((s) => s.id !== id));
   }
 
-  React.useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const out: typeof stats = {};
-      for (const c of saved) {
-        const { data: att } = await supabase
-          .from("attendance_records").select("status").eq("class_id", c.id).eq("date", date);
-        const list = (att as any[]) ?? [];
-        const present = list.filter((a) => a.status === "present").length;
-        const absent = list.length - present;
-        const marked = list.length;
-        out[c.id] = { present, absent, pct: marked === 0 ? 0 : Math.round((present / marked) * 100) };
-      }
-      if (!cancelled) setStats(out);
-    })();
-    return () => { cancelled = true; };
+  const reloadStats = React.useCallback(async () => {
+    const out: typeof stats = {};
+    for (const c of saved) {
+      const { data: att } = await supabase
+        .from("attendance_records").select("status").eq("class_id", c.id).eq("date", date);
+      const list = (att as any[]) ?? [];
+      const present = list.filter((a) => a.status === "present").length;
+      const absent = list.length - present;
+      const marked = list.length;
+      out[c.id] = { present, absent, pct: marked === 0 ? 0 : Math.round((present / marked) * 100) };
+    }
+    setStats(out);
   }, [saved, date]);
+
+  React.useEffect(() => { reloadStats(); }, [reloadStats]);
+
+  // Realtime sync of attendance for saved classes
+  React.useEffect(() => {
+    if (saved.length === 0) return;
+    const ch = supabase.channel(`admin-att:${date}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "attendance_records" }, () => reloadStats())
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [saved, date, reloadStats]);
 
   return (
     <section className="space-y-4">
