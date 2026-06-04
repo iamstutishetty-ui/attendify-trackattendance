@@ -183,7 +183,7 @@ function DashboardTab() {
                     <p className="text-[10px] text-muted-foreground mt-1">Code <span className="font-mono font-bold">{c.class_code}</span> · Tap to view students</p>
                   </button>
                   <div className="flex items-center gap-2">
-                    <div className="rounded-xl px-3 py-1 text-lg font-bold" style={{ background: "oklch(0.95 0.08 145)", color: "oklch(0.45 0.15 145)" }}>{s.pct}%</div>
+                    <div className="rounded-xl px-3 py-1 text-lg font-bold text-white" style={{ background: "oklch(0.55 0.20 145)" }}>{s.pct}%</div>
                     <button onClick={() => removeCode(c.id)} className="grid h-8 w-8 place-items-center rounded-lg bg-destructive/10 text-destructive hover:bg-destructive/20" aria-label="Remove">
                       <X className="h-4 w-4" />
                     </button>
@@ -296,8 +296,8 @@ function ClassDetailDialog({ cls, initialDate, onClose }: { cls: SavedClass | nu
 }
 
 function StatusPill({ status }: { status: "present" | "absent" | "unmarked" }) {
-  if (status === "present") return <span className="flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-bold" style={{ background: "oklch(0.95 0.08 145)", color: "oklch(0.45 0.15 145)" }}><Check className="h-3 w-3" />Present</span>;
-  if (status === "absent") return <span className="flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-bold" style={{ background: "oklch(0.95 0.06 25)", color: "oklch(0.50 0.20 25)" }}><XCircle className="h-3 w-3" />Absent</span>;
+  if (status === "present") return <span className="flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-bold text-white" style={{ background: "oklch(0.55 0.20 145)" }}><Check className="h-3 w-3" />Present</span>;
+  if (status === "absent") return <span className="flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-bold text-white" style={{ background: "oklch(0.55 0.22 25)" }}><XCircle className="h-3 w-3" />Absent</span>;
   return <span className="flex items-center gap-1 rounded-full bg-secondary px-2.5 py-0.5 text-[11px] font-bold text-muted-foreground"><MinusCircle className="h-3 w-3" />—</span>;
 }
 
@@ -415,14 +415,17 @@ function DefaultersTab() {
           supabase.from("attendance_records").select("student_id, status, date").eq("class_id", c.id),
           supabase.from("calendar_events").select("date, type").eq("class_id", c.id),
         ]);
-        // Working days only — exclude non_working & college_event
+        // Working days = dates teacher marked attendance, MINUS non_working / college_event
+        const nonWorking = new Set<string>();
+        (ev as any[] ?? []).forEach((e) => {
+          if (e.type === "non_working" || e.type === "holiday" || e.type === "college_event") nonWorking.add(e.date);
+        });
         const workingDays = new Set<string>();
-        (ev as any[] ?? []).forEach((e) => { if (e.type === "working") workingDays.add(e.date); });
-        (att as any[] ?? []).forEach((a) => workingDays.add(a.date));
+        (att as any[] ?? []).forEach((a) => { if (!nonWorking.has(a.date)) workingDays.add(a.date); });
         const total = workingDays.size;
         const presentBy: Record<string, number> = {};
         (att as any[] ?? []).forEach((a) => {
-          if (a.status === "present") presentBy[a.student_id] = (presentBy[a.student_id] || 0) + 1;
+          if (a.status === "present" && !nonWorking.has(a.date)) presentBy[a.student_id] = (presentBy[a.student_id] || 0) + 1;
         });
         (enrolls as any[] ?? []).forEach((e) => {
           const present = presentBy[e.student_id] ?? 0;
@@ -534,12 +537,12 @@ function Legend({ color, label }: { color: string; label: string }) {
 }
 
 function Stat({ label, value, tone }: { label: string; value: number; tone?: "success" | "danger" }) {
-  const bg = tone === "success" ? "oklch(0.96 0.08 145)" : tone === "danger" ? "oklch(0.96 0.06 25)" : undefined;
-  const color = tone === "success" ? "oklch(0.45 0.15 145)" : tone === "danger" ? "oklch(0.50 0.20 25)" : undefined;
+  const bg = tone === "success" ? "oklch(0.60 0.20 145)" : tone === "danger" ? "oklch(0.55 0.22 25)" : undefined;
+  const color = tone ? "white" : undefined;
   return (
     <div className="rounded-xl bg-secondary p-2" style={bg ? { background: bg } : undefined}>
       <p className="font-bold" style={color ? { color } : undefined}>{value}</p>
-      <p className="text-muted-foreground">{label}</p>
+      <p style={color ? { color } : undefined} className={tone ? "opacity-90" : "text-muted-foreground"}>{label}</p>
     </div>
   );
 }
