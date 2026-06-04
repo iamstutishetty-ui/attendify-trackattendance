@@ -415,14 +415,17 @@ function DefaultersTab() {
           supabase.from("attendance_records").select("student_id, status, date").eq("class_id", c.id),
           supabase.from("calendar_events").select("date, type").eq("class_id", c.id),
         ]);
-        // Working days only — exclude non_working & college_event
+        // Working days = dates teacher marked attendance, MINUS non_working / college_event
+        const nonWorking = new Set<string>();
+        (ev as any[] ?? []).forEach((e) => {
+          if (e.type === "non_working" || e.type === "holiday" || e.type === "college_event") nonWorking.add(e.date);
+        });
         const workingDays = new Set<string>();
-        (ev as any[] ?? []).forEach((e) => { if (e.type === "working") workingDays.add(e.date); });
-        (att as any[] ?? []).forEach((a) => workingDays.add(a.date));
+        (att as any[] ?? []).forEach((a) => { if (!nonWorking.has(a.date)) workingDays.add(a.date); });
         const total = workingDays.size;
         const presentBy: Record<string, number> = {};
         (att as any[] ?? []).forEach((a) => {
-          if (a.status === "present") presentBy[a.student_id] = (presentBy[a.student_id] || 0) + 1;
+          if (a.status === "present" && !nonWorking.has(a.date)) presentBy[a.student_id] = (presentBy[a.student_id] || 0) + 1;
         });
         (enrolls as any[] ?? []).forEach((e) => {
           const present = presentBy[e.student_id] ?? 0;
