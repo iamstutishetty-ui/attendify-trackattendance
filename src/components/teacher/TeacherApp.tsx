@@ -550,34 +550,124 @@ function AttendanceTab() {
   const presentCount = students.filter((s) => statuses[s.id] === "present").length;
   const absentCount = students.filter((s) => statuses[s.id] === "absent").length;
 
-  function toggle(id: string) {
-    setStatuses((p) => {
-      const cur = p[id];
-      const next: "present" | "absent" = cur === undefined ? "present" : cur === "present" ? "absent" : "present";
-      return { ...p, [id]: next };
-    });
+  async function toggle(id: string) {
+    if (!activeClass) return;
+    const cur = statuses[id];
+    const next: "present" | "absent" | undefined =
+      cur === undefined ? "present" :
+      cur === "present" ? "absent" :
+      undefined;
+    // Optimistic UI
+    setStatuses((p) => ({ ...p, [id]: next }));
+    const iso = toISODate(date);
+    try {
+      if (next === undefined) {
+        const { error } = await supabase.from("attendance_records").delete()
+          .eq("class_id", activeClass).eq("student_id", id).eq("date", iso);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from("attendance_records").upsert(
+          { class_id: activeClass, student_id: id, date: iso, status: next, marked_by: user!.id },
+          { onConflict: "class_id,student_id,date" },
+        );
+        if (error) throw error;
+        if (next === "present" && calendarEvents[iso] !== "working") {
+          await supabase.from("calendar_events").upsert(
+            { class_id: activeClass, date: iso, type: "working", title: "Working day" },
+            { onConflict: "class_id,date" },
+          );
+          setCalendarEvents((p) => ({ ...p, [iso]: "working" }));
+        }
+      }
+    } catch (e: any) {
+      // Revert on failure
+      setStatuses((p) => ({ ...p, [id]: cur }));
+      toast.error(e.message || "Could not save");
+    }
   }
 
-  async function save() {
-    if (!activeClass) return;
-    const marked = students.filter((s) => statuses[s.id] !== undefined);
-    if (marked.length === 0) { toast.error("Mark at least one student"); return; }
-    setSaving(true);
-    const iso = toISODate(date);
-    const rows = marked.map((s) => ({
-      class_id: activeClass, student_id: s.id, date: iso, status: statuses[s.id]!, marked_by: user!.id,
-    }));
-    const hasPresent = rows.some((r) => r.status === "present");
-    const { error } = await supabase.from("attendance_records").upsert(rows, { onConflict: "class_id,student_id,date" });
-    if (!error && hasPresent) {
-      await supabase.from("calendar_events").upsert(
-        { class_id: activeClass, date: iso, type: "working", title: "Working day" },
-        { onConflict: "class_id,date" },
-      );
-      setCalendarEvents((p) => ({ ...p, [iso]: "working" }));
+  async function downloadPdf() {
+    if (!activeClass || !activeRow) return;
+    setDownloading(true);
+    try {
+      const y = date.getFullYear(), m = date.getMonth();
+      const monthStart = toISODate(new Date(y, m, 1));
+      const monthEnd = toISODate(new Date(y, m + 1, 0));
+      const [enrollsRes, attRes, evRes] = await Promise.all([
+        supabase.from("class_enrollments").select("student_id, roll_number").eq("class_id", activeClass),
+        supabase.from("attendance_records").select("student_id, status, date")
+          .eq("class_id", activeClass).gte("date", monthStart).lte("date", monthEnd),
+        supabase.from("calendar_events").select("date, type")
+          .eq("class_id", activeClass).gte("date", monthStart).lte("date", monthEnd),
+      ]);
+      const enrolls = (enrollsRes.data as any[]) ?? [];
+      const studentIds = enrolls.map((e) => e.student_id);
+      let profMap = new Map<string, any>();
+      if (studentIds.length > 0) {
+        const { data: profs } = await supabase.from("profiles").select("id, full_name, user_id_text").in("id", studentIds);
+        profMap = new Map((profs as any[] ?? []).map((p) => [p.id, p]));
+      }
+      const roster = enrolls.map((e) => {
+        const p = profMap.get(e.student_id);
+        return { id: e.student_id, name: p?.full_name || p?.user_id_text || "Student", roll: e.roll_number || p?.user_id_text || "" };
+      }).sort((a, b) => a.roll.localeCompare(b.roll, undefined, { numeric: true }));
+
+      // Working dates = attendance dates minus non_working/college_event
+      const nonWorking = new Set<string>();
+      ((evRes.data as any[]) ?? []).forEach((e) => {
+        if (e.type === "non_working" || e.type === "holiday" || e.type === "college_event") nonWorking.add(e.date);
+      });
+      const workingDates = Array.from(new Set(((attRes.data as any[]) ?? [])
+        .map((a) => a.date as string)
+        .filter((d) => !nonWorking.has(d)))).sort();
+
+      if (workingDates.length === 0) {
+        toast.error("No working days in this month yet");
+        return;
+      }
+
+      // status lookup: `${studentId}|${date}` -> P/A
+      const lookup = new Map<string, "P" | "A">();
+      ((attRes.data as any[]) ?? []).forEach((a) => {
+        if (nonWorking.has(a.date)) return;
+        lookup.set(`${a.student_id}|${a.date}`, a.status === "present" ? "P" : "A");
+      });
+
+      const monthLabel = date.toLocaleDateString("en", { month: "long", year: "numeric" });
+      const head = [["Student", ...workingDates.map((d) => String(Number(d.slice(8, 10))))]];
+      const body = roster.map((s) => [
+        s.name,
+        ...workingDates.map((d) => lookup.get(`${s.id}|${d}`) ?? "—"),
+      ]);
+
+      const doc = new jsPDF({ orientation: workingDates.length > 12 ? "landscape" : "portrait", unit: "pt", format: "a4" });
+      doc.setFontSize(14);
+      doc.text(activeRow.name, 40, 40);
+      doc.setFontSize(10);
+      doc.text(monthLabel, 40, 58);
+      autoTable(doc, {
+        startY: 72,
+        head,
+        body,
+        styles: { fontSize: 8, halign: "center", cellPadding: 3 },
+        headStyles: { fillColor: [70, 110, 220], textColor: 255 },
+        columnStyles: { 0: { halign: "left", cellWidth: 110, fontStyle: "bold" } },
+        didParseCell: (data) => {
+          if (data.section === "body" && data.column.index > 0) {
+            const v = data.cell.raw as string;
+            if (v === "P") data.cell.styles.textColor = [20, 110, 60];
+            else if (v === "A") data.cell.styles.textColor = [170, 40, 40];
+            else data.cell.styles.textColor = [150, 150, 150];
+          }
+        },
+      });
+      doc.save(`${activeRow.name.replace(/\s+/g, "_")}_${monthLabel.replace(/\s+/g, "_")}.pdf`);
+      toast.success("PDF downloaded");
+    } catch (e: any) {
+      toast.error(e.message || "PDF failed");
+    } finally {
+      setDownloading(false);
     }
-    setSaving(false);
-    if (error) toast.error(error.message); else toast.success("Attendance saved");
   }
 
   if (classes.length === 0) {
@@ -585,11 +675,6 @@ function AttendanceTab() {
   }
 
   const activeRow = classes.find((c) => c.id === activeClass);
-  const activeSem = activeRow
-    ? (activeRow.attendance_mode === "two_semester" && activeRow.current_phase === 2 && activeRow.semester_secondary
-        ? activeRow.semester_secondary
-        : activeRow.semester)
-    : "";
 
   return (
     <section className="space-y-4">
@@ -605,13 +690,18 @@ function AttendanceTab() {
       <WeeklyStrip date={date} onChange={setDate} events={calendarEvents} />
 
       <div className="grid grid-cols-2 gap-2">
-        <Card className="rounded-2xl p-3" style={{ background: "oklch(0.95 0.08 145)" }}>
-          <p className="text-xs">Present</p><p className="text-2xl font-bold" style={{ color: "oklch(0.45 0.15 145)" }}>{presentCount}</p>
+        <Card className="rounded-2xl p-3 text-white" style={{ background: "oklch(0.55 0.20 145)" }}>
+          <p className="text-xs opacity-90">Present</p><p className="text-2xl font-bold">{presentCount}</p>
         </Card>
-        <Card className="rounded-2xl p-3" style={{ background: "oklch(0.95 0.05 25)" }}>
-          <p className="text-xs">Absent</p><p className="text-2xl font-bold" style={{ color: "oklch(0.50 0.20 25)" }}>{absentCount}</p>
+        <Card className="rounded-2xl p-3 text-white" style={{ background: "oklch(0.55 0.22 25)" }}>
+          <p className="text-xs opacity-90">Absent</p><p className="text-2xl font-bold">{absentCount}</p>
         </Card>
       </div>
+
+      <Button onClick={downloadPdf} disabled={downloading} variant="outline" className="h-11 w-full rounded-xl">
+        {downloading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
+        Download attendance PDF ({date.toLocaleDateString("en", { month: "long", year: "numeric" })})
+      </Button>
 
       <div className="relative">
         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -625,34 +715,28 @@ function AttendanceTab() {
           {filtered.map((s) => {
             const st = statuses[s.id];
             const tone = st === "present"
-              ? "border-[oklch(0.65_0.18_145)]/40 bg-[oklch(0.97_0.06_145)] dark:bg-[oklch(0.30_0.08_145)]"
+              ? "border-[oklch(0.55_0.20_145)] bg-[oklch(0.88_0.14_145)] dark:bg-[oklch(0.35_0.12_145)]"
               : st === "absent"
-              ? "border-destructive/40 bg-destructive/5"
+              ? "border-[oklch(0.55_0.22_25)] bg-[oklch(0.88_0.14_25)] dark:bg-[oklch(0.35_0.15_25)]"
               : "border-border bg-card";
             const badge = st === "present"
-              ? "bg-[oklch(0.65_0.18_145)] text-white"
+              ? "text-white"
               : st === "absent"
-              ? "bg-destructive text-destructive-foreground"
+              ? "text-white"
               : "bg-secondary text-muted-foreground";
+            const badgeStyle = st === "present" ? { background: "oklch(0.55 0.20 145)" }
+              : st === "absent" ? { background: "oklch(0.55 0.22 25)" } : undefined;
             return (
               <button key={s.id} onClick={() => toggle(s.id)}
                 className={`flex w-full items-center gap-3 rounded-2xl border p-3 text-left transition ${tone}`}>
                 <span className="font-mono text-xs font-semibold text-muted-foreground w-16 shrink-0">{s.roll}</span>
                 <span className="flex-1 text-sm font-semibold">{s.name}</span>
-                <span className={`grid h-9 w-9 place-items-center rounded-full ${badge}`}>
+                <span style={badgeStyle} className={`grid h-9 w-9 place-items-center rounded-full ${badge}`}>
                   {st === "present" ? <Check className="h-5 w-5" /> : st === "absent" ? <X className="h-5 w-5" /> : <span className="text-xs">—</span>}
                 </span>
               </button>
             );
           })}
-        </div>
-      )}
-
-      {students.length > 0 && (
-        <div className="fixed bottom-20 left-0 right-0 z-20 px-4">
-          <Button onClick={save} disabled={saving} className="h-12 w-full rounded-2xl text-base font-semibold shadow-xl">
-            {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Save attendance (Sem {activeSem})
-          </Button>
         </div>
       )}
     </section>
