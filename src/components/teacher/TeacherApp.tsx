@@ -763,6 +763,14 @@ function CalendarTab() {
   }, [user]);
   React.useEffect(() => { load(); }, [load]);
 
+  // Realtime: pick up admin-marked college events instantly
+  React.useEffect(() => {
+    const ch = supabase.channel(`teacher-cal:${user?.id ?? "anon"}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "calendar_events" }, () => load())
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [user, load]);
+
   async function markDate(date: string, type: "working" | "non_working") {
     if (classIds.length === 0) { toast.error("Create a class first"); return; }
     const rows = classIds.map((cid) => ({
