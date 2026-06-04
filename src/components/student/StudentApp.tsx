@@ -260,10 +260,10 @@ function CalendarTab() {
           })}
         </div>
         <div className="mt-3 flex flex-wrap gap-3 text-[11px]">
-          <Legend color="oklch(0.85 0.18 145)" label="Present" />
-          <Legend color="oklch(0.75 0.20 25)" label="Absent" />
-          <Legend color="oklch(0.92 0.16 85)" label="Non-working" />
-          <Legend color="oklch(0.80 0.15 250)" label="College event" />
+          <Legend color="oklch(0.60 0.20 145)" label="Present" />
+          <Legend color="oklch(0.55 0.22 25)" label="Absent" />
+          <Legend color="oklch(0.78 0.18 85)" label="Non-working" />
+          <Legend color="oklch(0.65 0.20 250)" label="College event" />
         </div>
       </Card>
     </section>
