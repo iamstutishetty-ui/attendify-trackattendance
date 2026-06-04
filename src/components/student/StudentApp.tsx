@@ -213,7 +213,7 @@ function CalendarTab() {
 
   const [eventMap, setEventMap] = React.useState<Map<string, string>>(new Map());
 
-  React.useEffect(() => {
+  const loadCalendar = React.useCallback(() => {
     if (!activeClass) return;
     Promise.all([
       supabase.from("attendance_records").select("date, status").eq("student_id", user!.id).eq("class_id", activeClass),
@@ -230,6 +230,18 @@ function CalendarTab() {
       setHolidays(h);
     });
   }, [activeClass, user]);
+
+  React.useEffect(() => { loadCalendar(); }, [loadCalendar]);
+
+  // Realtime sync
+  React.useEffect(() => {
+    if (!activeClass) return;
+    const ch = supabase.channel(`student-cal:${activeClass}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "calendar_events", filter: `class_id=eq.${activeClass}` }, () => loadCalendar())
+      .on("postgres_changes", { event: "*", schema: "public", table: "attendance_records", filter: `class_id=eq.${activeClass}` }, () => loadCalendar())
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [activeClass, loadCalendar]);
 
   const days = React.useMemo(() => {
     const y = month.getFullYear(), m = month.getMonth();
