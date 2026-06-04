@@ -14,13 +14,19 @@ import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
 import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
+  AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
   Layers, ClipboardCheck, CalendarDays, AlertTriangle, User as UserIcon, Plus,
-  Copy, Search, Loader2, Check, X, ArrowUpRight, Pencil, Trash2,
+  Copy, Search, Loader2, Check, X, ArrowUpRight, Pencil, Trash2, Download,
 } from "lucide-react";
 import { toast } from "sonner";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 
 type Tab = "classes" | "attendance" | "calendar" | "defaulters" | "profile";
 type AttendanceMode = "whole_year" | "two_semester";
