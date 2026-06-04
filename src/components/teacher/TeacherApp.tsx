@@ -166,6 +166,7 @@ function ClassesTab({ onGoToAttendance }: { onGoToAttendance: () => void }) {
 function ClassCard({ c, onChange, onMark }: { c: ClassRow; onChange: () => void; onMark: () => void }) {
   const [count, setCount] = React.useState<number | null>(null);
   const [editOpen, setEditOpen] = React.useState(false);
+  const [promoteOpen, setPromoteOpen] = React.useState(false);
 
   React.useEffect(() => {
     supabase.from("class_enrollments").select("id", { count: "exact", head: true }).eq("class_id", c.id)
