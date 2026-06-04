@@ -66,19 +66,21 @@ function useStudentClasses() {
       supabase.from("profiles").select("id, full_name, user_id_text").in("id", (enrolls as any[]).map((e) => e.classes?.teacher_id).filter(Boolean)),
     ]);
     const teacherMap = new Map((teacherProfiles as any[] ?? []).map((p) => [p.id, p.full_name || p.user_id_text]));
-    // Working days per class — only 'working' events count
-    const workingByClass: Record<string, Set<string>> = {};
+    // Working days = dates teacher marked attendance, MINUS non_working / college_event
+    const nonWorkingByClass: Record<string, Set<string>> = {};
     (events as any[] ?? []).forEach((e) => {
-      if (e.type !== "working") return;
-      (workingByClass[e.class_id] ||= new Set()).add(e.date);
+      if (e.type === "non_working" || e.type === "holiday" || e.type === "college_event") {
+        (nonWorkingByClass[e.class_id] ||= new Set()).add(e.date);
+      }
     });
-    // Include any attendance date as a fallback working day
+    const workingByClass: Record<string, Set<string>> = {};
     (att as any[] ?? []).forEach((a) => {
+      if (nonWorkingByClass[a.class_id]?.has(a.date)) return;
       (workingByClass[a.class_id] ||= new Set()).add(a.date);
     });
     const result: ClassInfo[] = (enrolls as any[]).map((e) => {
       const cAtt = (att as any[] ?? []).filter((a) => a.class_id === e.class_id);
-      const present = cAtt.filter((a) => a.status === "present").length;
+      const present = cAtt.filter((a) => a.status === "present" && !nonWorkingByClass[e.class_id]?.has(a.date)).length;
       const total = workingByClass[e.class_id]?.size ?? 0;
       return {
         id: e.class_id, name: e.classes?.name ?? "Class",
