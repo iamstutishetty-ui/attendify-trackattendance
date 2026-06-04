@@ -488,7 +488,7 @@ function AttendanceTab() {
   const [statuses, setStatuses] = React.useState<Record<string, "present" | "absent" | undefined>>({});
   const [calendarEvents, setCalendarEvents] = React.useState<Record<string, string>>({});
   const [query, setQuery] = React.useState("");
-  const [saving, setSaving] = React.useState(false);
+  const [downloading, setDownloading] = React.useState(false);
 
   React.useEffect(() => {
     supabase.from("classes").select("*").eq("teacher_id", user!.id).order("created_at", { ascending: false }).then(({ data }) => {
