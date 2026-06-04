@@ -794,7 +794,11 @@ function CalendarTab() {
 
   const eventMap = Object.fromEntries(events.map((e) => [e.date, e]));
   const days = monthCells(month);
-  const colorOf = (t: string) => t === "working" ? "bg-success/20 text-success" : t === "non_working" ? "bg-destructive/15 text-destructive" : "bg-muted text-muted-foreground";
+  const colorOf = (t: string) =>
+    t === "working" ? "bg-[oklch(0.60_0.20_145)] text-white" :
+    t === "non_working" ? "bg-[oklch(0.55_0.22_25)] text-white" :
+    t === "college_event" ? "bg-[oklch(0.55_0.20_250)] text-white" :
+    "bg-muted text-muted-foreground";
 
   return (
     <section className="space-y-4">
@@ -817,8 +821,9 @@ function CalendarTab() {
           })}
         </div>
         <div className="mt-2 flex flex-wrap justify-center gap-3 text-[10px]">
-          <Legend color="var(--success)" label="Working" />
-          <Legend color="var(--destructive)" label="Non-working" />
+          <Legend color="oklch(0.60 0.20 145)" label="Working" />
+          <Legend color="oklch(0.55 0.22 25)" label="Non-working" />
+          <Legend color="oklch(0.55 0.20 250)" label="College event" />
         </div>
       </Card>
     </section>
