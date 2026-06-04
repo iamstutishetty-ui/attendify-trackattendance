@@ -239,10 +239,25 @@ function ClassCard({ c, onChange, onMark }: { c: ClassRow; onChange: () => void;
         <Button size="sm" variant="default" className="flex-1 rounded-full" onClick={() => { sessionStorage.setItem("activeClass", c.id); onMark(); }}>
           <ClipboardCheck className="mr-1 h-4 w-4" />Mark
         </Button>
-        <Button size="sm" variant="outline" className="rounded-full" onClick={promote} title="Promote"><ArrowUpRight className="h-4 w-4" /></Button>
+        <Button size="sm" variant="outline" className="rounded-full" onClick={() => setPromoteOpen(true)} title="Promote"><ArrowUpRight className="h-4 w-4" /></Button>
         <Button size="sm" variant="outline" className="rounded-full" onClick={() => setEditOpen(true)} title="Edit"><Pencil className="h-4 w-4" /></Button>
         <Button size="sm" variant="destructive" className="rounded-full" onClick={deleteClass} title="Delete"><Trash2 className="h-4 w-4" /></Button>
       </div>
+
+      <AlertDialog open={promoteOpen} onOpenChange={setPromoteOpen}>
+        <AlertDialogContent className="rounded-2xl">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Promote class?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to promote this class? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={doPromote}>Confirm</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
         <EditClassDialog c={c} onSaved={() => { setEditOpen(false); onChange(); }} />
