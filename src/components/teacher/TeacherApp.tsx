@@ -192,7 +192,8 @@ function ClassCard({ c, onChange, onMark }: { c: ClassRow; onChange: () => void;
     if (error) toast.error(error.message); else { toast.success("Class deleted"); onChange(); }
   }
 
-  async function promote() {
+  async function doPromote() {
+    setPromoteOpen(false);
     if (c.attendance_mode === "two_semester" && c.current_phase === 1 && c.semester_secondary) {
       const { error } = await supabase.from("classes").update({ current_phase: 2 }).eq("id", c.id);
       if (error) toast.error(error.message);
