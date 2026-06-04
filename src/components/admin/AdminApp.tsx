@@ -296,8 +296,8 @@ function ClassDetailDialog({ cls, initialDate, onClose }: { cls: SavedClass | nu
 }
 
 function StatusPill({ status }: { status: "present" | "absent" | "unmarked" }) {
-  if (status === "present") return <span className="flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-bold" style={{ background: "oklch(0.95 0.08 145)", color: "oklch(0.45 0.15 145)" }}><Check className="h-3 w-3" />Present</span>;
-  if (status === "absent") return <span className="flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-bold" style={{ background: "oklch(0.95 0.06 25)", color: "oklch(0.50 0.20 25)" }}><XCircle className="h-3 w-3" />Absent</span>;
+  if (status === "present") return <span className="flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-bold text-white" style={{ background: "oklch(0.55 0.20 145)" }}><Check className="h-3 w-3" />Present</span>;
+  if (status === "absent") return <span className="flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-bold text-white" style={{ background: "oklch(0.55 0.22 25)" }}><XCircle className="h-3 w-3" />Absent</span>;
   return <span className="flex items-center gap-1 rounded-full bg-secondary px-2.5 py-0.5 text-[11px] font-bold text-muted-foreground"><MinusCircle className="h-3 w-3" />—</span>;
 }
 
