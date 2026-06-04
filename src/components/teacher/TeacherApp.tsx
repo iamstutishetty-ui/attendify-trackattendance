@@ -860,19 +860,22 @@ function DefaultersTab() {
         const { data: profs } = await supabase.from("profiles").select("id, full_name, user_id_text").in("id", studentIds);
         profileMap = new Map((profs as any[] ?? []).map((p) => [p.id, p]));
       }
-      // Working days per class = dates with type='working' (exclude non_working & college_event)
-      const workingByClass: Record<string, Set<string>> = {};
+      // Working days per class = attendance dates MINUS non_working/college_event/holiday
+      const nonWorkingByClass: Record<string, Set<string>> = {};
       ((evRes.data as any[]) ?? []).forEach((e) => {
-        if (e.type !== "working") return;
-        (workingByClass[e.class_id] ||= new Set()).add(e.date);
+        if (e.type === "non_working" || e.type === "holiday" || e.type === "college_event") {
+          (nonWorkingByClass[e.class_id] ||= new Set()).add(e.date);
+        }
       });
-      // Also include any attendance dates as fallback working days
+      const workingByClass: Record<string, Set<string>> = {};
       ((attRes.data as any[]) ?? []).forEach((a) => {
+        if (nonWorkingByClass[a.class_id]?.has(a.date)) return;
         (workingByClass[a.class_id] ||= new Set()).add(a.date);
       });
       const presentByKey: Record<string, number> = {};
       ((attRes.data as any[]) ?? []).forEach((a) => {
         if (a.status !== "present") return;
+        if (nonWorkingByClass[a.class_id]?.has(a.date)) return;
         const k = `${a.class_id}:${a.student_id}`;
         presentByKey[k] = (presentByKey[k] || 0) + 1;
       });
