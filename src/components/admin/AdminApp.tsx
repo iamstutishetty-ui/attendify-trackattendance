@@ -534,12 +534,12 @@ function Legend({ color, label }: { color: string; label: string }) {
 }
 
 function Stat({ label, value, tone }: { label: string; value: number; tone?: "success" | "danger" }) {
-  const bg = tone === "success" ? "oklch(0.96 0.08 145)" : tone === "danger" ? "oklch(0.96 0.06 25)" : undefined;
-  const color = tone === "success" ? "oklch(0.45 0.15 145)" : tone === "danger" ? "oklch(0.50 0.20 25)" : undefined;
+  const bg = tone === "success" ? "oklch(0.60 0.20 145)" : tone === "danger" ? "oklch(0.55 0.22 25)" : undefined;
+  const color = tone ? "white" : undefined;
   return (
     <div className="rounded-xl bg-secondary p-2" style={bg ? { background: bg } : undefined}>
       <p className="font-bold" style={color ? { color } : undefined}>{value}</p>
-      <p className="text-muted-foreground">{label}</p>
+      <p style={color ? { color } : undefined} className={tone ? "opacity-90" : "text-muted-foreground"}>{label}</p>
     </div>
   );
 }
