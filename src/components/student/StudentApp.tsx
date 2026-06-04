@@ -251,10 +251,10 @@ function CalendarTab() {
             if (!cell) return <div key={i} />;
             const status = attMap.get(cell.iso);
             const ev = eventMap.get(cell.iso);
-            const cls = ev === "college_event" ? "bg-[oklch(0.80_0.15_250)] text-[oklch(0.30_0.18_250)]"
-              : ev === "non_working" || ev === "holiday" ? "bg-[oklch(0.92_0.16_85)] text-[oklch(0.40_0.15_85)]"
-              : status === "present" ? "bg-[oklch(0.85_0.18_145)] text-[oklch(0.30_0.15_145)]"
-              : status === "absent" ? "bg-destructive/20 text-destructive"
+            const cls = ev === "college_event" ? "bg-[oklch(0.65_0.20_250)] text-white"
+              : ev === "non_working" || ev === "holiday" ? "bg-[oklch(0.78_0.18_85)] text-[oklch(0.30_0.15_85)]"
+              : status === "present" ? "bg-[oklch(0.60_0.20_145)] text-white"
+              : status === "absent" ? "bg-[oklch(0.55_0.22_25)] text-white"
               : "bg-secondary text-foreground/70";
             return <div key={i} className={`aspect-square grid place-items-center rounded-lg text-xs font-semibold ${cls}`}>{cell.d}</div>;
           })}
