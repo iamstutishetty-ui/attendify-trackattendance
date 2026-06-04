@@ -183,7 +183,7 @@ function DashboardTab() {
                     <p className="text-[10px] text-muted-foreground mt-1">Code <span className="font-mono font-bold">{c.class_code}</span> · Tap to view students</p>
                   </button>
                   <div className="flex items-center gap-2">
-                    <div className="rounded-xl px-3 py-1 text-lg font-bold" style={{ background: "oklch(0.95 0.08 145)", color: "oklch(0.45 0.15 145)" }}>{s.pct}%</div>
+                    <div className="rounded-xl px-3 py-1 text-lg font-bold text-white" style={{ background: "oklch(0.55 0.20 145)" }}>{s.pct}%</div>
                     <button onClick={() => removeCode(c.id)} className="grid h-8 w-8 place-items-center rounded-lg bg-destructive/10 text-destructive hover:bg-destructive/20" aria-label="Remove">
                       <X className="h-4 w-4" />
                     </button>
