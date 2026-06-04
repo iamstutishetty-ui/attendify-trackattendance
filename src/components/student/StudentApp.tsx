@@ -94,6 +94,18 @@ function useStudentClasses() {
   }, [user]);
 
   React.useEffect(() => { load(); }, [load]);
+
+  // Realtime: sync when teacher marks attendance or admin/teacher updates calendar events
+  React.useEffect(() => {
+    if (!user) return;
+    const ch = supabase.channel(`student-data:${user.id}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "attendance_records" }, () => load())
+      .on("postgres_changes", { event: "*", schema: "public", table: "calendar_events" }, () => load())
+      .on("postgres_changes", { event: "*", schema: "public", table: "class_enrollments" }, () => load())
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [user, load]);
+
   return { classes, loading, reload: load };
 }
 
