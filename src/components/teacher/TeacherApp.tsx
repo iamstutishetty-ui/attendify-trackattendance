@@ -81,11 +81,13 @@ export function TeacherApp() {
     <div className="min-h-screen bg-background pb-24">
       <AppHeader />
       <main className="px-4 pt-4">
-        {tab === "classes" && <ClassesTab onGoToAttendance={() => setTab("attendance")} />}
-        {tab === "attendance" && <AttendanceTab />}
-        {tab === "calendar" && <CalendarTab />}
-        {tab === "defaulters" && <DefaultersTab />}
-        {tab === "profile" && <ProfileTab />}
+        <div key={tab} className="animate-fade-in">
+          {tab === "classes" && <ClassesTab onGoToAttendance={() => setTab("attendance")} />}
+          {tab === "attendance" && <AttendanceTab />}
+          {tab === "calendar" && <CalendarTab />}
+          {tab === "defaulters" && <DefaultersTab />}
+          {tab === "profile" && <ProfileTab />}
+        </div>
       </main>
       <nav className="fixed bottom-0 left-0 right-0 z-30 border-t border-border bg-card/95 backdrop-blur-md">
         <div className="mx-auto grid max-w-md grid-cols-5">
