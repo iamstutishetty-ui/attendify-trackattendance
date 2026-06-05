@@ -73,10 +73,12 @@ export function AdminApp() {
     <div className="min-h-screen bg-background pb-24">
       <AppHeader />
       <main className="px-4 pt-4">
-        {tab === "dashboard" && <DashboardTab />}
-        {tab === "calendar" && <CalendarTab />}
-        {tab === "defaulters" && <DefaultersTab />}
-        {tab === "settings" && <SettingsTab />}
+        <div key={tab} className="animate-fade-in">
+          {tab === "dashboard" && <DashboardTab />}
+          {tab === "calendar" && <CalendarTab />}
+          {tab === "defaulters" && <DefaultersTab />}
+          {tab === "settings" && <SettingsTab />}
+        </div>
       </main>
       <nav className="fixed bottom-0 left-0 right-0 z-30 border-t border-border bg-card/95 backdrop-blur-md">
         <div className="mx-auto grid max-w-md grid-cols-4">
@@ -183,7 +185,7 @@ function DashboardTab() {
                     <p className="text-[10px] text-muted-foreground mt-1">Code <span className="font-mono font-bold">{c.class_code}</span> · Tap to view students</p>
                   </button>
                   <div className="flex items-center gap-2">
-                    <div className="rounded-xl px-3 py-1 text-lg font-bold text-white" style={{ background: "oklch(0.55 0.20 145)" }}>{s.pct}%</div>
+                    <div className="rounded-xl px-3 py-1 text-lg font-bold text-white" style={{ background: "oklch(0.78 0.17 145)" }}>{s.pct}%</div>
                     <button onClick={() => removeCode(c.id)} className="grid h-8 w-8 place-items-center rounded-lg bg-destructive/10 text-destructive hover:bg-destructive/20" aria-label="Remove">
                       <X className="h-4 w-4" />
                     </button>
@@ -296,8 +298,8 @@ function ClassDetailDialog({ cls, initialDate, onClose }: { cls: SavedClass | nu
 }
 
 function StatusPill({ status }: { status: "present" | "absent" | "unmarked" }) {
-  if (status === "present") return <span className="flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-bold text-white" style={{ background: "oklch(0.55 0.20 145)" }}><Check className="h-3 w-3" />Present</span>;
-  if (status === "absent") return <span className="flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-bold text-white" style={{ background: "oklch(0.55 0.22 25)" }}><XCircle className="h-3 w-3" />Absent</span>;
+  if (status === "present") return <span className="flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-bold text-white" style={{ background: "oklch(0.78 0.17 145)" }}><Check className="h-3 w-3" />Present</span>;
+  if (status === "absent") return <span className="flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-bold text-white" style={{ background: "oklch(0.72 0.17 25)" }}><XCircle className="h-3 w-3" />Absent</span>;
   return <span className="flex items-center gap-1 rounded-full bg-secondary px-2.5 py-0.5 text-[11px] font-bold text-muted-foreground"><MinusCircle className="h-3 w-3" />—</span>;
 }
 
@@ -388,7 +390,7 @@ function CalendarTab() {
         </div>
         <div className="mt-2 flex flex-wrap justify-center gap-3 text-[10px]">
           <Legend color="oklch(0.65 0.18 145)" label="Working" />
-          <Legend color="oklch(0.55 0.22 25)" label="Non-working" />
+          <Legend color="oklch(0.72 0.17 25)" label="Non-working" />
           <Legend color="oklch(0.70 0.18 250)" label="College event" />
         </div>
       </Card>
@@ -464,7 +466,7 @@ function DefaultersTab() {
       ) : (
         <div className="space-y-2">
           {filtered.map((r) => {
-            const color = r.pct >= 85 ? "oklch(0.55 0.18 145)" : r.pct >= 75 ? "oklch(0.70 0.16 85)" : "oklch(0.55 0.22 25)";
+            const color = r.pct >= 85 ? "oklch(0.70 0.18 145)" : r.pct >= 75 ? "oklch(0.70 0.16 85)" : "oklch(0.72 0.17 25)";
             return (
               <Card key={r.id} className="rounded-2xl p-3">
                 <div className="flex items-center justify-between">
@@ -537,7 +539,7 @@ function Legend({ color, label }: { color: string; label: string }) {
 }
 
 function Stat({ label, value, tone }: { label: string; value: number; tone?: "success" | "danger" }) {
-  const bg = tone === "success" ? "oklch(0.60 0.20 145)" : tone === "danger" ? "oklch(0.55 0.22 25)" : undefined;
+  const bg = tone === "success" ? "oklch(0.78 0.17 145)" : tone === "danger" ? "oklch(0.72 0.17 25)" : undefined;
   const color = tone ? "white" : undefined;
   return (
     <div className="rounded-xl bg-secondary p-2" style={bg ? { background: bg } : undefined}>

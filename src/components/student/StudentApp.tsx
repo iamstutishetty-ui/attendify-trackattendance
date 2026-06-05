@@ -26,9 +26,11 @@ export function StudentApp() {
     <div className="min-h-screen bg-background pb-24">
       <AppHeader />
       <main className="px-4 pt-4">
-        {tab === "dashboard" && <DashboardTab />}
-        {tab === "calendar" && <CalendarTab />}
-        {tab === "profile" && <ProfileTab />}
+        <div key={tab} className="animate-fade-in">
+          {tab === "dashboard" && <DashboardTab />}
+          {tab === "calendar" && <CalendarTab />}
+          {tab === "profile" && <ProfileTab />}
+        </div>
       </main>
       <nav className="fixed bottom-0 left-0 right-0 z-30 border-t border-border bg-card/95 backdrop-blur-md">
         <div className="mx-auto grid max-w-md grid-cols-3">
@@ -175,7 +177,7 @@ function DashboardTab() {
 }
 
 function ClassRow({ c }: { c: ClassInfo }) {
-  const color = c.pct >= 85 ? "oklch(0.55 0.18 145)" : c.pct >= 75 ? "oklch(0.70 0.16 85)" : "oklch(0.55 0.22 25)";
+  const color = c.pct >= 85 ? "oklch(0.70 0.18 145)" : c.pct >= 75 ? "oklch(0.70 0.16 85)" : "oklch(0.72 0.17 25)";
   return (
     <Card className="rounded-2xl p-4">
       <div className="flex items-center justify-between">
@@ -256,15 +258,15 @@ function CalendarTab() {
   if (classes.length === 0) return <Card className="rounded-2xl p-8 text-center text-sm text-muted-foreground mt-4">Join a class to see your calendar.</Card>;
 
   return (
-    <section className="space-y-4">
+    <section className="space-y-4 mx-auto w-full max-w-sm">
       <select value={activeClass} onChange={(e) => setActiveClass(e.target.value)} className="h-11 w-full rounded-xl border border-input bg-card px-3 text-sm font-semibold">
         {classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
       </select>
 
-      <Card className="rounded-3xl p-4">
+      <Card className="rounded-3xl p-3 mx-auto w-full">
         <div className="flex items-center justify-between">
           <button onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))} className="rounded-full bg-secondary px-3 py-1 text-sm">‹</button>
-          <p className="font-bold">{month.toLocaleDateString("en", { month: "long", year: "numeric" })}</p>
+          <p className="font-bold text-sm">{month.toLocaleDateString("en", { month: "long", year: "numeric" })}</p>
           <button onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))} className="rounded-full bg-secondary px-3 py-1 text-sm">›</button>
         </div>
         <div className="mt-3 grid grid-cols-7 gap-1 text-center text-[10px] text-muted-foreground">
@@ -277,15 +279,15 @@ function CalendarTab() {
             const ev = eventMap.get(cell.iso);
             const cls = ev === "college_event" ? "bg-[oklch(0.65_0.20_250)] text-white"
               : ev === "non_working" || ev === "holiday" ? "bg-[oklch(0.78_0.18_85)] text-[oklch(0.30_0.15_85)]"
-              : status === "present" ? "bg-[oklch(0.60_0.20_145)] text-white"
-              : status === "absent" ? "bg-[oklch(0.55_0.22_25)] text-white"
+              : status === "present" ? "bg-[oklch(0.78_0.17_145)] text-white"
+              : status === "absent" ? "bg-[oklch(0.72_0.17_25)] text-white"
               : "bg-secondary text-foreground/70";
-            return <div key={i} className={`aspect-square grid place-items-center rounded-lg text-xs font-semibold ${cls}`}>{cell.d}</div>;
+            return <div key={i} className={`aspect-square grid place-items-center rounded-lg text-[11px] font-semibold transition-colors ${cls}`}>{cell.d}</div>;
           })}
         </div>
-        <div className="mt-3 flex flex-wrap gap-3 text-[11px]">
-          <Legend color="oklch(0.60 0.20 145)" label="Present" />
-          <Legend color="oklch(0.55 0.22 25)" label="Absent" />
+        <div className="mt-3 flex flex-wrap justify-center gap-3 text-[11px]">
+          <Legend color="oklch(0.78 0.17 145)" label="Present" />
+          <Legend color="oklch(0.72 0.17 25)" label="Absent" />
           <Legend color="oklch(0.78 0.18 85)" label="Non-working" />
           <Legend color="oklch(0.65 0.20 250)" label="College event" />
         </div>

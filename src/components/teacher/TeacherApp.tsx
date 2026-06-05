@@ -81,11 +81,13 @@ export function TeacherApp() {
     <div className="min-h-screen bg-background pb-24">
       <AppHeader />
       <main className="px-4 pt-4">
-        {tab === "classes" && <ClassesTab onGoToAttendance={() => setTab("attendance")} />}
-        {tab === "attendance" && <AttendanceTab />}
-        {tab === "calendar" && <CalendarTab />}
-        {tab === "defaulters" && <DefaultersTab />}
-        {tab === "profile" && <ProfileTab />}
+        <div key={tab} className="animate-fade-in">
+          {tab === "classes" && <ClassesTab onGoToAttendance={() => setTab("attendance")} />}
+          {tab === "attendance" && <AttendanceTab />}
+          {tab === "calendar" && <CalendarTab />}
+          {tab === "defaulters" && <DefaultersTab />}
+          {tab === "profile" && <ProfileTab />}
+        </div>
       </main>
       <nav className="fixed bottom-0 left-0 right-0 z-30 border-t border-border bg-card/95 backdrop-blur-md">
         <div className="mx-auto grid max-w-md grid-cols-5">
@@ -690,10 +692,10 @@ function AttendanceTab() {
       <WeeklyStrip date={date} onChange={setDate} events={calendarEvents} />
 
       <div className="grid grid-cols-2 gap-2">
-        <Card className="rounded-2xl p-3 text-white" style={{ background: "oklch(0.55 0.20 145)" }}>
+        <Card className="rounded-2xl p-3 text-white" style={{ background: "oklch(0.78 0.17 145)" }}>
           <p className="text-xs opacity-90">Present</p><p className="text-2xl font-bold">{presentCount}</p>
         </Card>
-        <Card className="rounded-2xl p-3 text-white" style={{ background: "oklch(0.55 0.22 25)" }}>
+        <Card className="rounded-2xl p-3 text-white" style={{ background: "oklch(0.72 0.17 25)" }}>
           <p className="text-xs opacity-90">Absent</p><p className="text-2xl font-bold">{absentCount}</p>
         </Card>
       </div>
@@ -715,17 +717,17 @@ function AttendanceTab() {
           {filtered.map((s) => {
             const st = statuses[s.id];
             const tone = st === "present"
-              ? "border-[oklch(0.55_0.20_145)] bg-[oklch(0.88_0.14_145)] dark:bg-[oklch(0.35_0.12_145)]"
+              ? "border-[oklch(0.78_0.17_145)] bg-[oklch(0.88_0.14_145)] dark:bg-[oklch(0.35_0.12_145)]"
               : st === "absent"
-              ? "border-[oklch(0.55_0.22_25)] bg-[oklch(0.88_0.14_25)] dark:bg-[oklch(0.35_0.15_25)]"
+              ? "border-[oklch(0.72_0.17_25)] bg-[oklch(0.88_0.14_25)] dark:bg-[oklch(0.35_0.15_25)]"
               : "border-border bg-card";
             const badge = st === "present"
               ? "text-white"
               : st === "absent"
               ? "text-white"
               : "bg-secondary text-muted-foreground";
-            const badgeStyle = st === "present" ? { background: "oklch(0.55 0.20 145)" }
-              : st === "absent" ? { background: "oklch(0.55 0.22 25)" } : undefined;
+            const badgeStyle = st === "present" ? { background: "oklch(0.78 0.17 145)" }
+              : st === "absent" ? { background: "oklch(0.72 0.17 25)" } : undefined;
             return (
               <button key={s.id} onClick={() => toggle(s.id)}
                 className={`flex w-full items-center gap-3 rounded-2xl border p-3 text-left transition ${tone}`}>
@@ -795,8 +797,8 @@ function CalendarTab() {
   const eventMap = Object.fromEntries(events.map((e) => [e.date, e]));
   const days = monthCells(month);
   const colorOf = (t: string) =>
-    t === "working" ? "bg-[oklch(0.60_0.20_145)] text-white" :
-    t === "non_working" ? "bg-[oklch(0.55_0.22_25)] text-white" :
+    t === "working" ? "bg-[oklch(0.78_0.17_145)] text-white" :
+    t === "non_working" ? "bg-[oklch(0.72_0.17_25)] text-white" :
     t === "college_event" ? "bg-[oklch(0.55_0.20_250)] text-white" :
     "bg-muted text-muted-foreground";
 
@@ -821,8 +823,8 @@ function CalendarTab() {
           })}
         </div>
         <div className="mt-2 flex flex-wrap justify-center gap-3 text-[10px]">
-          <Legend color="oklch(0.60 0.20 145)" label="Working" />
-          <Legend color="oklch(0.55 0.22 25)" label="Non-working" />
+          <Legend color="oklch(0.78 0.17 145)" label="Working" />
+          <Legend color="oklch(0.72 0.17 25)" label="Non-working" />
           <Legend color="oklch(0.55 0.20 250)" label="College event" />
         </div>
       </Card>
@@ -915,7 +917,7 @@ function DefaultersTab() {
       ) : (
         <div className="space-y-2">
           {filtered.map((r) => {
-            const color = r.pct >= 85 ? "oklch(0.55 0.18 145)" : r.pct >= 75 ? "oklch(0.70 0.16 85)" : "oklch(0.55 0.22 25)";
+            const color = r.pct >= 85 ? "oklch(0.70 0.18 145)" : r.pct >= 75 ? "oklch(0.70 0.16 85)" : "oklch(0.72 0.17 25)";
             return (
               <Card key={r.id} className="rounded-2xl p-3">
                 <div className="flex items-center justify-between">
