@@ -211,36 +211,44 @@ function DashboardTab() {
 interface StudentRow { student_id: string; name: string; roll: string; status: "present" | "absent" | "unmarked"; }
 
 function ClassDetailDialog({ cls, initialDate, onClose }: { cls: SavedClass | null; initialDate: string; onClose: () => void }) {
-  const [date, setDate] = React.useState(initialDate);
   const [rows, setRows] = React.useState<StudentRow[]>([]);
   const [loading, setLoading] = React.useState(false);
-
-  React.useEffect(() => { setDate(initialDate); }, [initialDate, cls?.id]);
+  const date = initialDate;
 
   const loadDetail = React.useCallback(async () => {
     if (!cls) return;
     setLoading(true);
     const [{ data: enrolls }, { data: att }] = await Promise.all([
       supabase.from("class_enrollments")
-        .select("student_id, roll_number, profiles!class_enrollments_student_id_fkey(full_name, user_id_text)")
+        .select("student_id, roll_number")
         .eq("class_id", cls.id),
       supabase.from("attendance_records").select("student_id, status").eq("class_id", cls.id).eq("date", date),
     ]);
+    const enrollList = (enrolls as any[]) ?? [];
+    const studentIds = enrollList.map((e) => e.student_id);
+    const profMap: Record<string, { full_name: string; user_id_text: string }> = {};
+    if (studentIds.length > 0) {
+      const { data: profs } = await supabase
+        .from("profiles").select("id, full_name, user_id_text").in("id", studentIds);
+      (profs as any[] ?? []).forEach((p) => { profMap[p.id] = { full_name: p.full_name, user_id_text: p.user_id_text }; });
+    }
     const statusBy: Record<string, "present" | "absent"> = {};
     (att as any[] ?? []).forEach((a) => { statusBy[a.student_id] = a.status as any; });
-    const list: StudentRow[] = (enrolls as any[] ?? []).map((e) => ({
-      student_id: e.student_id,
-      name: e.profiles?.full_name || e.profiles?.user_id_text || "Student",
-      roll: e.roll_number || e.profiles?.user_id_text || "",
-      status: statusBy[e.student_id] ?? "unmarked",
-    })).sort((a, b) => (a.roll || "").localeCompare(b.roll || "", undefined, { numeric: true }));
+    const list: StudentRow[] = enrollList.map((e) => {
+      const p = profMap[e.student_id];
+      return {
+        student_id: e.student_id,
+        name: p?.full_name || p?.user_id_text || "Student",
+        roll: e.roll_number || p?.user_id_text || "",
+        status: statusBy[e.student_id] ?? "unmarked",
+      };
+    }).sort((a, b) => (a.roll || "").localeCompare(b.roll || "", undefined, { numeric: true }));
     setRows(list);
     setLoading(false);
   }, [cls, date]);
 
   React.useEffect(() => { loadDetail(); }, [loadDetail]);
 
-  // Realtime sync attendance changes for this class
   React.useEffect(() => {
     if (!cls) return;
     const ch = supabase.channel(`admin-detail:${cls.id}:${date}`)
@@ -259,15 +267,10 @@ function ClassDetailDialog({ cls, initialDate, onClose }: { cls: SavedClass | nu
       <DialogContent className="max-w-md rounded-2xl max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="truncate">{cls?.name}</DialogTitle>
-          <p className="text-[11px] text-muted-foreground">{cls?.teacher_name} · {cls?.class_code}</p>
+          <p className="text-[11px] text-muted-foreground">{cls?.teacher_name} · {cls?.class_code} · {date}</p>
         </DialogHeader>
 
         <div className="space-y-3">
-          <div>
-            <label className="text-xs text-muted-foreground">Select date</label>
-            <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="h-11 rounded-xl mt-1" />
-          </div>
-
           <div className="grid grid-cols-3 gap-2 text-center text-xs">
             <Stat label="Present" value={present} tone="success" />
             <Stat label="Absent" value={absent} tone="danger" />
