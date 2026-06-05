@@ -211,36 +211,44 @@ function DashboardTab() {
 interface StudentRow { student_id: string; name: string; roll: string; status: "present" | "absent" | "unmarked"; }
 
 function ClassDetailDialog({ cls, initialDate, onClose }: { cls: SavedClass | null; initialDate: string; onClose: () => void }) {
-  const [date, setDate] = React.useState(initialDate);
   const [rows, setRows] = React.useState<StudentRow[]>([]);
   const [loading, setLoading] = React.useState(false);
-
-  React.useEffect(() => { setDate(initialDate); }, [initialDate, cls?.id]);
+  const date = initialDate;
 
   const loadDetail = React.useCallback(async () => {
     if (!cls) return;
     setLoading(true);
     const [{ data: enrolls }, { data: att }] = await Promise.all([
       supabase.from("class_enrollments")
-        .select("student_id, roll_number, profiles!class_enrollments_student_id_fkey(full_name, user_id_text)")
+        .select("student_id, roll_number")
         .eq("class_id", cls.id),
       supabase.from("attendance_records").select("student_id, status").eq("class_id", cls.id).eq("date", date),
     ]);
+    const enrollList = (enrolls as any[]) ?? [];
+    const studentIds = enrollList.map((e) => e.student_id);
+    const profMap: Record<string, { full_name: string; user_id_text: string }> = {};
+    if (studentIds.length > 0) {
+      const { data: profs } = await supabase
+        .from("profiles").select("id, full_name, user_id_text").in("id", studentIds);
+      (profs as any[] ?? []).forEach((p) => { profMap[p.id] = { full_name: p.full_name, user_id_text: p.user_id_text }; });
+    }
     const statusBy: Record<string, "present" | "absent"> = {};
     (att as any[] ?? []).forEach((a) => { statusBy[a.student_id] = a.status as any; });
-    const list: StudentRow[] = (enrolls as any[] ?? []).map((e) => ({
-      student_id: e.student_id,
-      name: e.profiles?.full_name || e.profiles?.user_id_text || "Student",
-      roll: e.roll_number || e.profiles?.user_id_text || "",
-      status: statusBy[e.student_id] ?? "unmarked",
-    })).sort((a, b) => (a.roll || "").localeCompare(b.roll || "", undefined, { numeric: true }));
+    const list: StudentRow[] = enrollList.map((e) => {
+      const p = profMap[e.student_id];
+      return {
+        student_id: e.student_id,
+        name: p?.full_name || p?.user_id_text || "Student",
+        roll: e.roll_number || p?.user_id_text || "",
+        status: statusBy[e.student_id] ?? "unmarked",
+      };
+    }).sort((a, b) => (a.roll || "").localeCompare(b.roll || "", undefined, { numeric: true }));
     setRows(list);
     setLoading(false);
   }, [cls, date]);
 
   React.useEffect(() => { loadDetail(); }, [loadDetail]);
 
-  // Realtime sync attendance changes for this class
   React.useEffect(() => {
     if (!cls) return;
     const ch = supabase.channel(`admin-detail:${cls.id}:${date}`)
@@ -259,15 +267,10 @@ function ClassDetailDialog({ cls, initialDate, onClose }: { cls: SavedClass | nu
       <DialogContent className="max-w-md rounded-2xl max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="truncate">{cls?.name}</DialogTitle>
-          <p className="text-[11px] text-muted-foreground">{cls?.teacher_name} · {cls?.class_code}</p>
+          <p className="text-[11px] text-muted-foreground">{cls?.teacher_name} · {cls?.class_code} · {date}</p>
         </DialogHeader>
 
         <div className="space-y-3">
-          <div>
-            <label className="text-xs text-muted-foreground">Select date</label>
-            <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="h-11 rounded-xl mt-1" />
-          </div>
-
           <div className="grid grid-cols-3 gap-2 text-center text-xs">
             <Stat label="Present" value={present} tone="success" />
             <Stat label="Absent" value={absent} tone="danger" />
@@ -400,55 +403,90 @@ function CalendarTab() {
 
 /* -------------------- DEFAULTERS -------------------- */
 function DefaultersTab() {
-  const [saved] = useSavedClasses();
   const [view, setView] = React.useState<"below" | "above">("below");
   const [rows, setRows] = React.useState<{ id: string; name: string; roll: string; class_name: string; present: number; total: number; pct: number }[]>([]);
-  const [loading, setLoading] = React.useState(false);
+  const [loading, setLoading] = React.useState(true);
+
+  const load = React.useCallback(async () => {
+    setLoading(true);
+    // Pull every class admin can see
+    const { data: classes } = await supabase.from("classes").select("id, name");
+    const classList = (classes as any[]) ?? [];
+    if (classList.length === 0) { setRows([]); setLoading(false); return; }
+
+    const classIds = classList.map((c) => c.id);
+    const [{ data: enrolls }, { data: att }, { data: ev }] = await Promise.all([
+      supabase.from("class_enrollments").select("class_id, student_id, roll_number").in("class_id", classIds),
+      supabase.from("attendance_records").select("class_id, student_id, status, date").in("class_id", classIds),
+      supabase.from("calendar_events").select("class_id, date, type").in("class_id", classIds),
+    ]);
+
+    const enrollList = (enrolls as any[]) ?? [];
+    const attList = (att as any[]) ?? [];
+    const evList = (ev as any[]) ?? [];
+
+    // Profiles
+    const studentIds = Array.from(new Set(enrollList.map((e) => e.student_id)));
+    const profMap: Record<string, { full_name: string; user_id_text: string }> = {};
+    if (studentIds.length > 0) {
+      const { data: profs } = await supabase.from("profiles").select("id, full_name, user_id_text").in("id", studentIds);
+      (profs as any[] ?? []).forEach((p) => { profMap[p.id] = { full_name: p.full_name, user_id_text: p.user_id_text }; });
+    }
+
+    // Per-class non-working day set
+    const nonWorkingByClass: Record<string, Set<string>> = {};
+    evList.forEach((e) => {
+      if (e.type === "non_working" || e.type === "holiday" || e.type === "college_event") {
+        (nonWorkingByClass[e.class_id] ||= new Set()).add(e.date);
+      }
+    });
+    // Per-class working day set (dates where attendance recorded, excluding non-working)
+    const workingByClass: Record<string, Set<string>> = {};
+    attList.forEach((a) => {
+      const nw = nonWorkingByClass[a.class_id];
+      if (!nw || !nw.has(a.date)) (workingByClass[a.class_id] ||= new Set()).add(a.date);
+    });
+    // Per-(class,student) present count
+    const presentBy: Record<string, number> = {};
+    attList.forEach((a) => {
+      const nw = nonWorkingByClass[a.class_id];
+      if (a.status === "present" && (!nw || !nw.has(a.date))) {
+        const k = `${a.class_id}:${a.student_id}`;
+        presentBy[k] = (presentBy[k] || 0) + 1;
+      }
+    });
+
+    const classNameById: Record<string, string> = {};
+    classList.forEach((c) => { classNameById[c.id] = c.name; });
+
+    const out = enrollList.map((e) => {
+      const total = workingByClass[e.class_id]?.size ?? 0;
+      const present = presentBy[`${e.class_id}:${e.student_id}`] ?? 0;
+      const p = profMap[e.student_id];
+      return {
+        id: `${e.class_id}:${e.student_id}`,
+        name: p?.full_name || p?.user_id_text || "Student",
+        roll: e.roll_number || p?.user_id_text || "",
+        class_name: classNameById[e.class_id] || "—",
+        present, total,
+        pct: total === 0 ? 0 : Math.round((present / total) * 100),
+      };
+    }).sort((a, b) => a.pct - b.pct);
+
+    setRows(out);
+    setLoading(false);
+  }, []);
+
+  React.useEffect(() => { load(); }, [load]);
 
   React.useEffect(() => {
-    if (saved.length === 0) { setRows([]); return; }
-    let cancelled = false;
-    (async () => {
-      setLoading(true);
-      const all: typeof rows = [];
-      for (const c of saved) {
-        const [{ data: enrolls }, { data: att }, { data: ev }] = await Promise.all([
-          supabase.from("class_enrollments").select("student_id, roll_number, profiles!class_enrollments_student_id_fkey(full_name, user_id_text)").eq("class_id", c.id),
-          supabase.from("attendance_records").select("student_id, status, date").eq("class_id", c.id),
-          supabase.from("calendar_events").select("date, type").eq("class_id", c.id),
-        ]);
-        // Working days = dates teacher marked attendance, MINUS non_working / college_event
-        const nonWorking = new Set<string>();
-        (ev as any[] ?? []).forEach((e) => {
-          if (e.type === "non_working" || e.type === "holiday" || e.type === "college_event") nonWorking.add(e.date);
-        });
-        const workingDays = new Set<string>();
-        (att as any[] ?? []).forEach((a) => { if (!nonWorking.has(a.date)) workingDays.add(a.date); });
-        const total = workingDays.size;
-        const presentBy: Record<string, number> = {};
-        (att as any[] ?? []).forEach((a) => {
-          if (a.status === "present" && !nonWorking.has(a.date)) presentBy[a.student_id] = (presentBy[a.student_id] || 0) + 1;
-        });
-        (enrolls as any[] ?? []).forEach((e) => {
-          const present = presentBy[e.student_id] ?? 0;
-          all.push({
-            id: `${c.id}:${e.student_id}`,
-            name: e.profiles?.full_name || "Student",
-            roll: e.roll_number || e.profiles?.user_id_text || "",
-            class_name: c.name,
-            present, total,
-            pct: total === 0 ? 0 : Math.round((present / total) * 100),
-          });
-        });
-      }
-      if (!cancelled) { setRows(all.sort((a, b) => a.pct - b.pct)); setLoading(false); }
-    })();
-    return () => { cancelled = true; };
-  }, [saved]);
-
-  if (saved.length === 0) {
-    return <p className="text-center text-xs text-muted-foreground py-8">Add a class in the Dashboard first.</p>;
-  }
+    const ch = supabase.channel("admin-defaulters-all")
+      .on("postgres_changes", { event: "*", schema: "public", table: "attendance_records" }, () => load())
+      .on("postgres_changes", { event: "*", schema: "public", table: "class_enrollments" }, () => load())
+      .on("postgres_changes", { event: "*", schema: "public", table: "calendar_events" }, () => load())
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [load]);
 
   const filtered = view === "below" ? rows.filter((r) => r.pct < 75) : rows.filter((r) => r.pct >= 75);
 
@@ -461,8 +499,10 @@ function DefaultersTab() {
       </div>
       {loading ? (
         <p className="text-center text-xs text-muted-foreground py-6"><Loader2 className="inline h-4 w-4 animate-spin" /></p>
+      ) : rows.length === 0 ? (
+        <p className="text-center text-xs text-muted-foreground py-6">No students enrolled in any class yet.</p>
       ) : filtered.length === 0 ? (
-        <p className="text-center text-xs text-muted-foreground py-6">None</p>
+        <p className="text-center text-xs text-muted-foreground py-6">None in this category.</p>
       ) : (
         <div className="space-y-2">
           {filtered.map((r) => {
@@ -472,7 +512,7 @@ function DefaultersTab() {
                 <div className="flex items-center justify-between">
                   <div className="min-w-0">
                     <p className="text-sm font-semibold truncate">{r.name}</p>
-                    <p className="text-[11px] text-muted-foreground truncate">{r.roll} · {r.class_name} · {r.present}/{r.total} classes</p>
+                    <p className="text-[11px] text-muted-foreground truncate">{r.roll ? `${r.roll} · ` : ""}{r.class_name} · {r.present}/{r.total} classes</p>
                   </div>
                   <span className="text-lg font-bold shrink-0" style={{ color }}>{r.pct}%</span>
                 </div>
