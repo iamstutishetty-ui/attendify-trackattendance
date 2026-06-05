@@ -175,7 +175,7 @@ function DashboardTab() {
 }
 
 function ClassRow({ c }: { c: ClassInfo }) {
-  const color = c.pct >= 85 ? "oklch(0.55 0.18 145)" : c.pct >= 75 ? "oklch(0.70 0.16 85)" : "oklch(0.55 0.22 25)";
+  const color = c.pct >= 85 ? "oklch(0.70 0.18 145)" : c.pct >= 75 ? "oklch(0.70 0.16 85)" : "oklch(0.72 0.17 25)";
   return (
     <Card className="rounded-2xl p-4">
       <div className="flex items-center justify-between">
@@ -277,15 +277,15 @@ function CalendarTab() {
             const ev = eventMap.get(cell.iso);
             const cls = ev === "college_event" ? "bg-[oklch(0.65_0.20_250)] text-white"
               : ev === "non_working" || ev === "holiday" ? "bg-[oklch(0.78_0.18_85)] text-[oklch(0.30_0.15_85)]"
-              : status === "present" ? "bg-[oklch(0.60_0.20_145)] text-white"
-              : status === "absent" ? "bg-[oklch(0.55_0.22_25)] text-white"
+              : status === "present" ? "bg-[oklch(0.78_0.17_145)] text-white"
+              : status === "absent" ? "bg-[oklch(0.72_0.17_25)] text-white"
               : "bg-secondary text-foreground/70";
             return <div key={i} className={`aspect-square grid place-items-center rounded-lg text-xs font-semibold ${cls}`}>{cell.d}</div>;
           })}
         </div>
         <div className="mt-3 flex flex-wrap gap-3 text-[11px]">
-          <Legend color="oklch(0.60 0.20 145)" label="Present" />
-          <Legend color="oklch(0.55 0.22 25)" label="Absent" />
+          <Legend color="oklch(0.78 0.17 145)" label="Present" />
+          <Legend color="oklch(0.72 0.17 25)" label="Absent" />
           <Legend color="oklch(0.78 0.18 85)" label="Non-working" />
           <Legend color="oklch(0.65 0.20 250)" label="College event" />
         </div>
