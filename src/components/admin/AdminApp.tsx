@@ -12,6 +12,10 @@ import {
 } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Loader2, Search, BarChart3, CalendarDays, AlertTriangle,
   Settings as SettingsIcon, X, Plus, Check, XCircle, MinusCircle,
 } from "lucide-react";
