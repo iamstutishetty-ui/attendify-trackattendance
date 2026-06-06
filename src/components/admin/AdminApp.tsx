@@ -240,6 +240,32 @@ function DashboardTab() {
       )}
 
       <ClassDetailDialog cls={openClass} initialDate={date} onClose={() => setOpenClass(null)} />
+
+      <AlertDialog open={!!confirmRemove} onOpenChange={(o) => !o && setConfirmRemove(null)}>
+        <AlertDialogContent className="rounded-2xl">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove this class?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete this class? All attendance data for this class will be permanently lost.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={async () => {
+                if (confirmRemove) {
+                  await removeClass(confirmRemove.id);
+                  toast.success("Class removed");
+                }
+                setConfirmRemove(null);
+              }}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </section>
   );
 }
