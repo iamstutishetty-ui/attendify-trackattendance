@@ -40,35 +40,70 @@ interface SavedClass {
   total_students: number;
 }
 
-const STORAGE_KEY = "admin.savedClasses.v1";
-
-function loadSaved(): SavedClass[] {
-  if (typeof window === "undefined") return [];
-  try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]"); }
-  catch { return []; }
-}
-function saveSaved(list: SavedClass[]) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
-}
-
-/* shared hook so all tabs see the same list */
+/* Saved classes are persisted in the database (admin_saved_classes table)
+   so they never disappear when the browser is cleared. */
 function useSavedClasses() {
-  const [list, setList] = React.useState<SavedClass[]>(() => loadSaved());
-  React.useEffect(() => {
-    const onStorage = () => setList(loadSaved());
-    window.addEventListener("storage", onStorage);
-    window.addEventListener("admin:saved-classes", onStorage);
-    return () => {
-      window.removeEventListener("storage", onStorage);
-      window.removeEventListener("admin:saved-classes", onStorage);
-    };
+  const [list, setList] = React.useState<SavedClass[]>([]);
+  const [loaded, setLoaded] = React.useState(false);
+
+  const reload = React.useCallback(async () => {
+    const { data: rows } = await (supabase as any)
+      .from("admin_saved_classes")
+      .select("class_id")
+      .order("created_at", { ascending: false });
+    const ids = (rows ?? []).map((r: any) => r.class_id);
+    if (ids.length === 0) { setList([]); setLoaded(true); return; }
+    const { data: classes } = await supabase
+      .from("classes")
+      .select("id, name, semester, academic_year, class_code, teacher_id")
+      .in("id", ids);
+    const teacherIds = Array.from(new Set((classes ?? []).map((c: any) => c.teacher_id)));
+    const { data: profs } = await supabase
+      .from("profiles").select("id, full_name, user_id_text").in("id", teacherIds);
+    const { data: enrollCounts } = await supabase
+      .from("class_enrollments").select("class_id").in("class_id", ids);
+    const counts: Record<string, number> = {};
+    (enrollCounts ?? []).forEach((e: any) => { counts[e.class_id] = (counts[e.class_id] ?? 0) + 1; });
+    const byId: Record<string, any> = {};
+    (classes ?? []).forEach((c: any) => {
+      const p = (profs ?? []).find((x: any) => x.id === c.teacher_id);
+      byId[c.id] = {
+        id: c.id, name: c.name, semester: c.semester, academic_year: c.academic_year,
+        class_code: c.class_code,
+        teacher_name: p?.full_name || p?.user_id_text || "—",
+        total_students: counts[c.id] ?? 0,
+      };
+    });
+    setList(ids.map((id: string) => byId[id]).filter(Boolean));
+    setLoaded(true);
   }, []);
-  const update = (next: SavedClass[]) => {
-    saveSaved(next);
-    setList(next);
-    window.dispatchEvent(new Event("admin:saved-classes"));
+
+  React.useEffect(() => { reload(); }, [reload]);
+
+  React.useEffect(() => {
+    const ch = supabase.channel("admin-saved-classes")
+      .on("postgres_changes", { event: "*", schema: "public", table: "admin_saved_classes" }, () => reload())
+      .on("postgres_changes", { event: "*", schema: "public", table: "class_enrollments" }, () => reload())
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [reload]);
+
+  const addClass = async (cls: SavedClass) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    await (supabase as any).from("admin_saved_classes")
+      .insert({ admin_id: user.id, class_id: cls.id });
+    await reload();
   };
-  return [list, update] as const;
+  const removeClass = async (classId: string) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    await (supabase as any).from("admin_saved_classes")
+      .delete().eq("admin_id", user.id).eq("class_id", classId);
+    await reload();
+  };
+
+  return { list, loaded, addClass, removeClass } as const;
 }
 
 export function AdminApp() {
