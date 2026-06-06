@@ -138,17 +138,18 @@ export function AdminApp() {
 
 /* -------------------- DASHBOARD -------------------- */
 function DashboardTab() {
-  const [saved, setSaved] = useSavedClasses();
+  const { list: saved, addClass, removeClass } = useSavedClasses();
   const [code, setCode] = React.useState("");
   const [date, setDate] = React.useState(new Date().toISOString().slice(0, 10));
   const [adding, setAdding] = React.useState(false);
   const [stats, setStats] = React.useState<Record<string, { present: number; absent: number; pct: number }>>({});
   const [openClass, setOpenClass] = React.useState<SavedClass | null>(null);
+  const [confirmRemove, setConfirmRemove] = React.useState<SavedClass | null>(null);
 
   async function addCode(e?: React.FormEvent) {
     e?.preventDefault();
     if (!code.trim()) return toast.error("Enter a class code");
-    if (saved.some((s) => s.class_code.toUpperCase() === code.trim().toUpperCase())) {
+    if (saved.some((s: SavedClass) => s.class_code.toUpperCase() === code.trim().toUpperCase())) {
       setCode("");
       return toast.error("Class already added");
     }
@@ -162,14 +163,11 @@ function DashboardTab() {
       class_code: row.class_code, teacher_name: row.teacher_name,
       total_students: Number(row.total_students),
     };
-    setSaved([next, ...saved]);
+    await addClass(next);
     setCode("");
     toast.success("Class added");
   }
 
-  function removeCode(id: string) {
-    setSaved(saved.filter((s) => s.id !== id));
-  }
 
   const reloadStats = React.useCallback(async () => {
     const out: typeof stats = {};
