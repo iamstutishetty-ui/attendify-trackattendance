@@ -109,3 +109,12 @@
     box-shadow: 0 4px 20px -8px oklch(0.55 0.20 255 / 0.20);
   }
 }
+
+[data-lovable-badge],
+.lovable-badge,
+a[href*="lovable.dev"] {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}

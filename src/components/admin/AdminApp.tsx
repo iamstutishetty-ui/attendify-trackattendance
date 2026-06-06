@@ -12,6 +12,10 @@ import {
 } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Loader2, Search, BarChart3, CalendarDays, AlertTriangle,
   Settings as SettingsIcon, X, Plus, Check, XCircle, MinusCircle,
 } from "lucide-react";
@@ -36,35 +40,70 @@ interface SavedClass {
   total_students: number;
 }
 
-const STORAGE_KEY = "admin.savedClasses.v1";
-
-function loadSaved(): SavedClass[] {
-  if (typeof window === "undefined") return [];
-  try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]"); }
-  catch { return []; }
-}
-function saveSaved(list: SavedClass[]) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
-}
-
-/* shared hook so all tabs see the same list */
+/* Saved classes are persisted in the database (admin_saved_classes table)
+   so they never disappear when the browser is cleared. */
 function useSavedClasses() {
-  const [list, setList] = React.useState<SavedClass[]>(() => loadSaved());
-  React.useEffect(() => {
-    const onStorage = () => setList(loadSaved());
-    window.addEventListener("storage", onStorage);
-    window.addEventListener("admin:saved-classes", onStorage);
-    return () => {
-      window.removeEventListener("storage", onStorage);
-      window.removeEventListener("admin:saved-classes", onStorage);
-    };
+  const [list, setList] = React.useState<SavedClass[]>([]);
+  const [loaded, setLoaded] = React.useState(false);
+
+  const reload = React.useCallback(async () => {
+    const { data: rows } = await (supabase as any)
+      .from("admin_saved_classes")
+      .select("class_id")
+      .order("created_at", { ascending: false });
+    const ids = (rows ?? []).map((r: any) => r.class_id);
+    if (ids.length === 0) { setList([]); setLoaded(true); return; }
+    const { data: classes } = await supabase
+      .from("classes")
+      .select("id, name, semester, academic_year, class_code, teacher_id")
+      .in("id", ids);
+    const teacherIds = Array.from(new Set((classes ?? []).map((c: any) => c.teacher_id)));
+    const { data: profs } = await supabase
+      .from("profiles").select("id, full_name, user_id_text").in("id", teacherIds);
+    const { data: enrollCounts } = await supabase
+      .from("class_enrollments").select("class_id").in("class_id", ids);
+    const counts: Record<string, number> = {};
+    (enrollCounts ?? []).forEach((e: any) => { counts[e.class_id] = (counts[e.class_id] ?? 0) + 1; });
+    const byId: Record<string, any> = {};
+    (classes ?? []).forEach((c: any) => {
+      const p = (profs ?? []).find((x: any) => x.id === c.teacher_id);
+      byId[c.id] = {
+        id: c.id, name: c.name, semester: c.semester, academic_year: c.academic_year,
+        class_code: c.class_code,
+        teacher_name: p?.full_name || p?.user_id_text || "—",
+        total_students: counts[c.id] ?? 0,
+      };
+    });
+    setList(ids.map((id: string) => byId[id]).filter(Boolean));
+    setLoaded(true);
   }, []);
-  const update = (next: SavedClass[]) => {
-    saveSaved(next);
-    setList(next);
-    window.dispatchEvent(new Event("admin:saved-classes"));
+
+  React.useEffect(() => { reload(); }, [reload]);
+
+  React.useEffect(() => {
+    const ch = supabase.channel("admin-saved-classes")
+      .on("postgres_changes", { event: "*", schema: "public", table: "admin_saved_classes" }, () => reload())
+      .on("postgres_changes", { event: "*", schema: "public", table: "class_enrollments" }, () => reload())
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [reload]);
+
+  const addClass = async (cls: SavedClass) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    await (supabase as any).from("admin_saved_classes")
+      .insert({ admin_id: user.id, class_id: cls.id });
+    await reload();
   };
-  return [list, update] as const;
+  const removeClass = async (classId: string) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    await (supabase as any).from("admin_saved_classes")
+      .delete().eq("admin_id", user.id).eq("class_id", classId);
+    await reload();
+  };
+
+  return { list, loaded, addClass, removeClass } as const;
 }
 
 export function AdminApp() {
@@ -99,17 +138,18 @@ export function AdminApp() {
 
 /* -------------------- DASHBOARD -------------------- */
 function DashboardTab() {
-  const [saved, setSaved] = useSavedClasses();
+  const { list: saved, addClass, removeClass } = useSavedClasses();
   const [code, setCode] = React.useState("");
   const [date, setDate] = React.useState(new Date().toISOString().slice(0, 10));
   const [adding, setAdding] = React.useState(false);
   const [stats, setStats] = React.useState<Record<string, { present: number; absent: number; pct: number }>>({});
   const [openClass, setOpenClass] = React.useState<SavedClass | null>(null);
+  const [confirmRemove, setConfirmRemove] = React.useState<SavedClass | null>(null);
 
   async function addCode(e?: React.FormEvent) {
     e?.preventDefault();
     if (!code.trim()) return toast.error("Enter a class code");
-    if (saved.some((s) => s.class_code.toUpperCase() === code.trim().toUpperCase())) {
+    if (saved.some((s: SavedClass) => s.class_code.toUpperCase() === code.trim().toUpperCase())) {
       setCode("");
       return toast.error("Class already added");
     }
@@ -123,14 +163,11 @@ function DashboardTab() {
       class_code: row.class_code, teacher_name: row.teacher_name,
       total_students: Number(row.total_students),
     };
-    setSaved([next, ...saved]);
+    await addClass(next);
     setCode("");
     toast.success("Class added");
   }
 
-  function removeCode(id: string) {
-    setSaved(saved.filter((s) => s.id !== id));
-  }
 
   const reloadStats = React.useCallback(async () => {
     const out: typeof stats = {};
@@ -186,7 +223,7 @@ function DashboardTab() {
                   </button>
                   <div className="flex items-center gap-2">
                     <div className="rounded-xl px-3 py-1 text-lg font-bold text-white" style={{ background: "oklch(0.78 0.17 145)" }}>{s.pct}%</div>
-                    <button onClick={() => removeCode(c.id)} className="grid h-8 w-8 place-items-center rounded-lg bg-destructive/10 text-destructive hover:bg-destructive/20" aria-label="Remove">
+                    <button onClick={() => setConfirmRemove(c)} className="grid h-8 w-8 place-items-center rounded-lg bg-destructive/10 text-destructive hover:bg-destructive/20" aria-label="Remove">
                       <X className="h-4 w-4" />
                     </button>
                   </div>
@@ -203,6 +240,32 @@ function DashboardTab() {
       )}
 
       <ClassDetailDialog cls={openClass} initialDate={date} onClose={() => setOpenClass(null)} />
+
+      <AlertDialog open={!!confirmRemove} onOpenChange={(o) => !o && setConfirmRemove(null)}>
+        <AlertDialogContent className="rounded-2xl">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove this class?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete this class? All attendance data for this class will be permanently lost.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={async () => {
+                if (confirmRemove) {
+                  await removeClass(confirmRemove.id);
+                  toast.success("Class removed");
+                }
+                setConfirmRemove(null);
+              }}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </section>
   );
 }
