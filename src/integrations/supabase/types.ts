@@ -14,6 +14,35 @@ export type Database = {
   }
   public: {
     Tables: {
+      admin_saved_classes: {
+        Row: {
+          admin_id: string
+          class_id: string
+          created_at: string
+          id: string
+        }
+        Insert: {
+          admin_id: string
+          class_id: string
+          created_at?: string
+          id?: string
+        }
+        Update: {
+          admin_id?: string
+          class_id?: string
+          created_at?: string
+          id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "admin_saved_classes_class_id_fkey"
+            columns: ["class_id"]
+            isOneToOne: false
+            referencedRelation: "classes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       attendance_records: {
         Row: {
           class_id: string
