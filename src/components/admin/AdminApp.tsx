@@ -223,7 +223,7 @@ function DashboardTab() {
                   </button>
                   <div className="flex items-center gap-2">
                     <div className="rounded-xl px-3 py-1 text-lg font-bold text-white" style={{ background: "oklch(0.78 0.17 145)" }}>{s.pct}%</div>
-                    <button onClick={() => removeCode(c.id)} className="grid h-8 w-8 place-items-center rounded-lg bg-destructive/10 text-destructive hover:bg-destructive/20" aria-label="Remove">
+                    <button onClick={() => setConfirmRemove(c)} className="grid h-8 w-8 place-items-center rounded-lg bg-destructive/10 text-destructive hover:bg-destructive/20" aria-label="Remove">
                       <X className="h-4 w-4" />
                     </button>
                   </div>
