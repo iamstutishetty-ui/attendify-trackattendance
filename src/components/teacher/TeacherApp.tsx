@@ -692,10 +692,10 @@ function AttendanceTab() {
       <WeeklyStrip date={date} onChange={setDate} events={calendarEvents} />
 
       <div className="grid grid-cols-2 gap-2">
-        <Card className="rounded-2xl p-3 text-white" style={{ background: "oklch(0.78 0.17 145)" }}>
+        <Card className="rounded-2xl p-3 text-white" style={{ background: "#1DB954" }}>
           <p className="text-xs opacity-90">Present</p><p className="text-2xl font-bold">{presentCount}</p>
         </Card>
-        <Card className="rounded-2xl p-3 text-white" style={{ background: "oklch(0.72 0.17 25)" }}>
+        <Card className="rounded-2xl p-3 text-white" style={{ background: "#E74C3C" }}>
           <p className="text-xs opacity-90">Absent</p><p className="text-2xl font-bold">{absentCount}</p>
         </Card>
       </div>
@@ -717,17 +717,17 @@ function AttendanceTab() {
           {filtered.map((s) => {
             const st = statuses[s.id];
             const tone = st === "present"
-              ? "border-[oklch(0.78_0.17_145)] bg-[oklch(0.88_0.14_145)] dark:bg-[oklch(0.35_0.12_145)]"
+              ? "border-[#1DB954] bg-[#1DB954/20] dark:bg-[#1DB954/30]"
               : st === "absent"
-              ? "border-[oklch(0.72_0.17_25)] bg-[oklch(0.88_0.14_25)] dark:bg-[oklch(0.35_0.15_25)]"
+              ? "border-[#E74C3C] bg-[#E74C3C/20] dark:bg-[#E74C3C/30]"
               : "border-border bg-card";
             const badge = st === "present"
               ? "text-white"
               : st === "absent"
               ? "text-white"
               : "bg-secondary text-muted-foreground";
-            const badgeStyle = st === "present" ? { background: "oklch(0.78 0.17 145)" }
-              : st === "absent" ? { background: "oklch(0.72 0.17 25)" } : undefined;
+            const badgeStyle = st === "present" ? { background: "#1DB954" }
+              : st === "absent" ? { background: "#E74C3C" } : undefined;
             return (
               <button key={s.id} onClick={() => toggle(s.id)}
                 className={`flex w-full items-center gap-3 rounded-2xl border p-3 text-left transition ${tone}`}>
@@ -797,8 +797,8 @@ function CalendarTab() {
   const eventMap = Object.fromEntries(events.map((e) => [e.date, e]));
   const days = monthCells(month);
   const colorOf = (t: string) =>
-    t === "working" ? "bg-[oklch(0.78_0.17_145)] text-white" :
-    t === "non_working" ? "bg-[oklch(0.72_0.17_25)] text-white" :
+    t === "working" ? "bg-[#1DB954] text-white" :
+    t === "non_working" ? "bg-[#E74C3C] text-white" :
     t === "college_event" ? "bg-[oklch(0.55_0.20_250)] text-white" :
     "bg-muted text-muted-foreground";
 
@@ -823,8 +823,8 @@ function CalendarTab() {
           })}
         </div>
         <div className="mt-2 flex flex-wrap justify-center gap-3 text-[10px]">
-          <Legend color="oklch(0.78 0.17 145)" label="Working" />
-          <Legend color="oklch(0.72 0.17 25)" label="Non-working" />
+          <Legend color="#1DB954" label="Working" />
+          <Legend color="#E74C3C" label="Non-working" />
           <Legend color="oklch(0.55 0.20 250)" label="College event" />
         </div>
       </Card>
@@ -917,7 +917,7 @@ function DefaultersTab() {
       ) : (
         <div className="space-y-2">
           {filtered.map((r) => {
-            const color = r.pct >= 85 ? "oklch(0.70 0.18 145)" : r.pct >= 75 ? "oklch(0.70 0.16 85)" : "oklch(0.72 0.17 25)";
+            const color = r.pct >= 85 ? "#1DB954" : r.pct >= 75 ? "oklch(0.70 0.16 85)" : "#E74C3C";
             return (
               <Card key={r.id} className="rounded-2xl p-3">
                 <div className="flex items-center justify-between">
