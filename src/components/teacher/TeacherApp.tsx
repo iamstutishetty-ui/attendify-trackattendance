@@ -717,9 +717,9 @@ function AttendanceTab() {
           {filtered.map((s) => {
             const st = statuses[s.id];
             const tone = st === "present"
-              ? "border-[#1DB954] bg-[#1DB954/20] dark:bg-[#1DB954/30]"
+              ? "border-[#1DB954] bg-[#1DB954]/20 dark:bg-[#1DB954]/30"
               : st === "absent"
-              ? "border-[#E74C3C] bg-[#E74C3C/20] dark:bg-[#E74C3C/30]"
+              ? "border-[#E74C3C] bg-[#E74C3C]/20 dark:bg-[#E74C3C]/30"
               : "border-border bg-card";
             const badge = st === "present"
               ? "text-white"
