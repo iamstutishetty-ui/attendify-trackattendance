@@ -330,7 +330,7 @@ function ClassDetailDialog({ cls, initialDate, onClose }: { cls: SavedClass | nu
       <DialogContent className="max-w-md rounded-2xl max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="truncate">{cls?.name}</DialogTitle>
-          <p className="text-[11px] text-muted-foreground">{cls?.teacher_name} · {cls?.class_code} · {date}</p>
+          <p className="text-[11px] text-muted-foreground">{cls?.teacher_name} · {cls?.class_code} · {date.split("-").reverse().join("/")}</p>
         </DialogHeader>
 
         <div className="space-y-3">
@@ -425,10 +425,10 @@ function CalendarTab() {
 
   const days = monthCells(month);
   const colorOf = (t: string | undefined) =>
-    t === "working" ? "bg-success/20 text-success" :
-    t === "non_working" ? "bg-destructive/15 text-destructive" :
-    t === "college_event" ? "bg-[oklch(0.80_0.15_250)] text-[oklch(0.30_0.18_250)]" :
-    "bg-secondary text-foreground/70";
+    t === "working" ? "text-white font-bold" :
+    t === "non_working" ? "text-white font-bold" :
+    t === "college_event" ? "text-white font-bold" :
+    "bg-secondary text-foreground/70 font-bold";
 
   return (
     <section className="space-y-4">
@@ -448,16 +448,16 @@ function CalendarTab() {
             if (!cell) return <div key={i} />;
             return (
               <button key={cell.iso} disabled={busy} onClick={() => cycleDate(cell.iso)}
-                className={`grid aspect-square place-items-center rounded-lg text-[11px] font-semibold transition ${colorOf(events[cell.iso])}`}>
+                className={`grid aspect-square place-items-center rounded-lg text-[11px] font-semibold transition ${colorOf(events[cell.iso])}`} style={events[cell.iso] === "working" ? {background:"#80b946"} : events[cell.iso] === "non_working" ? {background:"#e05c5c"} : events[cell.iso] === "college_event" ? {background:"#6baed6"} : {}}>
                 {cell.d}
               </button>
             );
           })}
         </div>
         <div className="mt-2 flex flex-wrap justify-center gap-3 text-[10px]">
-          <Legend color="#1DB954" label="Working" />
-          <Legend color="#E74C3C" label="Non-working" />
-          <Legend color="oklch(0.70 0.18 250)" label="College event" />
+          <Legend color="#80b946" label="Working" />
+          <Legend color="#e05c5c" label="Non-working" />
+          <Legend color="#6baed6" label="College event" />
         </div>
       </Card>
     </section>

@@ -135,17 +135,17 @@ export function AuthScreen() {
             {mode === "signup" && (
               <div className="space-y-1.5">
                 <Label htmlFor="name">Full name</Label>
-                <Input id="name" value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="e.g. Stuti Patel" className="rounded-xl h-11" />
+                <Input id="name" value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="e.g. Stuti Shetty" className="rounded-xl h-11" />
               </div>
             )}
             <div className="space-y-1.5">
               <Label htmlFor="uid">ID</Label>
-              <Input id="uid" autoCapitalize="none" autoCorrect="off" value={userId} onChange={(e) => setUserId(e.target.value)} placeholder="e.g. 22cs001" className="rounded-xl h-11" />
+              <Input id="uid" autoCapitalize="none" autoCorrect="off" value={userId} onChange={(e) => setUserId(e.target.value)} placeholder="e.g. stuti001" className="rounded-xl h-11" />
             </div>
             {(mode === "signup" || mode === "forgot") && (
               <div className="space-y-1.5">
                 <Label htmlFor="email">{mode === "signup" ? "Recovery email" : "Registered email"}</Label>
-                <Input id="email" type="email" autoCapitalize="none" autoCorrect="off" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" className="rounded-xl h-11" />
+                <Input id="email" type="email" autoCapitalize="none" autoCorrect="off" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="enter your email id" className="rounded-xl h-11" />
                 {mode === "signup" && (
                   <p className="text-[11px] text-muted-foreground">Used only to recover your account if you forget your password.</p>
                 )}

@@ -797,10 +797,10 @@ function CalendarTab() {
   const eventMap = Object.fromEntries(events.map((e) => [e.date, e]));
   const days = monthCells(month);
   const colorOf = (t: string) =>
-    t === "working" ? "bg-[#1DB954] text-white" :
-    t === "non_working" ? "bg-[#E74C3C] text-white" :
-    t === "college_event" ? "bg-[oklch(0.55_0.20_250)] text-white" :
-    "bg-muted text-muted-foreground";
+    t === "working" ? "text-white font-bold" :
+    t === "non_working" ? "text-white font-bold" :
+    t === "college_event" ? "text-white font-bold" :
+    "bg-muted text-muted-foreground font-bold";
 
   return (
     <section className="space-y-4">
@@ -819,13 +819,13 @@ function CalendarTab() {
           {days.map((cell, i) => {
             if (!cell) return <div key={i} />;
             const event = eventMap[cell.iso];
-            return <button key={cell.iso} onClick={() => handleDateClick(cell.iso)} onDoubleClick={() => handleDateDoubleClick(cell.iso)} className={`aspect-square rounded-lg text-[11px] font-semibold transition ${event ? colorOf(event.type) : "bg-secondary text-foreground/70"}`}>{cell.d}</button>;
+            return <button key={cell.iso} onClick={() => handleDateClick(cell.iso)} onDoubleClick={() => handleDateDoubleClick(cell.iso)} className={`aspect-square rounded-lg text-[11px] font-semibold transition ${event ? colorOf(event.type) : "bg-secondary text-foreground/70 font-bold"}`} style={event?.type === "working" ? {background:"#80b946"} : event?.type === "non_working" ? {background:"#e05c5c"} : event?.type === "college_event" ? {background:"#6baed6"} : {}}>{cell.d}</button>;
           })}
         </div>
         <div className="mt-2 flex flex-wrap justify-center gap-3 text-[10px]">
-          <Legend color="#1DB954" label="Working" />
-          <Legend color="#E74C3C" label="Non-working" />
-          <Legend color="oklch(0.55 0.20 250)" label="College event" />
+          <Legend color="#80b946" label="Working" />
+          <Legend color="#e05c5c" label="Non-working" />
+          <Legend color="#6baed6" label="College event" />
         </div>
       </Card>
     </section>

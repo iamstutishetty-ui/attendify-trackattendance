@@ -277,19 +277,19 @@ function CalendarTab() {
             if (!cell) return <div key={i} />;
             const status = attMap.get(cell.iso);
             const ev = eventMap.get(cell.iso);
-            const cls = ev === "college_event" ? "bg-[oklch(0.65_0.20_250)] text-white"
-              : ev === "non_working" || ev === "holiday" ? "bg-[oklch(0.78_0.18_85)] text-[oklch(0.30_0.15_85)]"
-              : status === "present" ? "bg-[#1DB954] text-white"
-              : status === "absent" ? "bg-[#E74C3C] text-white"
-              : "bg-secondary text-foreground/70";
-            return <div key={i} className={`aspect-square grid place-items-center rounded-lg text-[11px] font-semibold transition-colors ${cls}`}>{cell.d}</div>;
+            const cls = ev === "college_event" ? "text-white font-bold"
+              : ev === "non_working" || ev === "holiday" ? "text-white font-bold"
+              : status === "present" ? "text-white font-bold"
+              : status === "absent" ? "text-white font-bold"
+              : "bg-secondary text-foreground/70 font-bold";
+            return <div key={i} className={`aspect-square grid place-items-center rounded-lg text-[11px] font-semibold transition-colors ${cls}`} style={ev === "college_event" ? {background:"#6baed6"} : ev === "non_working" || ev === "holiday" ? {background:"#f4c430"} : status === "present" ? {background:"#80b946"} : status === "absent" ? {background:"#e05c5c"} : {}}>{cell.d}</div>;
           })}
         </div>
         <div className="mt-3 flex flex-wrap justify-center gap-3 text-[11px]">
-          <Legend color="#1DB954" label="Present" />
-          <Legend color="#E74C3C" label="Absent" />
-          <Legend color="oklch(0.78 0.18 85)" label="Non-working" />
-          <Legend color="oklch(0.65 0.20 250)" label="College event" />
+          <Legend color="#80b946" label="Present" />
+          <Legend color="#e05c5c" label="Absent" />
+          <Legend color="#f4c430" label="Holiday" />
+          <Legend color="#6baed6" label="College event" />
         </div>
       </Card>
     </section>
