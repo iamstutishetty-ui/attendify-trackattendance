@@ -17,7 +17,7 @@ const roles: { value: AppRole; label: string; icon: React.ElementType; desc: str
 
 export function AuthScreen() {
   const [mode, setMode] = React.useState<"login" | "signup" | "forgot">("login");
-  const [role, setRole] = React.useState<AppRole>("student");
+  const [role, setRole] = React.useState<AppRole | null>(null);
   const [userId, setUserId] = React.useState("");
   const [fullName, setFullName] = React.useState("");
   const [email, setEmail] = React.useState("");
