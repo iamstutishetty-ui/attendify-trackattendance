@@ -228,7 +228,7 @@ function CalendarTab() {
       (ev as any[] ?? []).forEach((e) => em.set(e.date, e.type));
       setEventMap(em);
       const h = new Set<string>();
-      (ev as any[] ?? []).forEach((e) => { if (e.type === "holiday" || e.type === "non_working") h.add(e.date); });
+      (ev as any[] ?? []).forEach((e) => { if (e.type === "holiday" || e.type === "non_working" || e.type === "student_holiday") h.add(e.date); });
       setHolidays(h);
     });
   }, [activeClass, user]);
