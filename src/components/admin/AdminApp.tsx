@@ -502,7 +502,6 @@ function AdminMarkWeekdayOff({ classIds, onDone }: { classIds: string[]; onDone:
   return (
     <Card className="mx-auto w-full max-w-sm rounded-2xl p-3 space-y-2">
       <p className="text-xs font-semibold">Mark weekday as non-working</p>
-      <p className="text-[10px] text-muted-foreground">Applies to every occurrence in the academic year. Shown as holiday on student calendars.</p>
       <div className="flex gap-2">
         <select value={wd} onChange={(e) => setWd(parseInt(e.target.value))} className="flex-1 rounded-md border border-input bg-background px-2 py-1.5 text-xs">
           {ADMIN_WD_NAMES.map((n, i) => <option key={i} value={i}>{n}</option>)}
