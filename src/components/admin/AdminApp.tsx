@@ -460,7 +460,55 @@ function CalendarTab() {
           <Legend color="#6baed6" label="College event" />
         </div>
       </Card>
+      <AdminMarkWeekdayOff classIds={allClassIds} onDone={loadAll} />
     </section>
+  );
+}
+
+const ADMIN_WD_NAMES = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+
+function AdminMarkWeekdayOff({ classIds, onDone }: { classIds: string[]; onDone: () => void }) {
+  const [wd, setWd] = React.useState(0);
+  const [busy, setBusy] = React.useState(false);
+  async function apply() {
+    if (classIds.length === 0) { toast.error("No classes"); return; }
+    setBusy(true);
+    const { data: cls } = await supabase.from("classes").select("academic_year").in("id", classIds);
+    const years = new Set<string>((cls as any[] ?? []).map((c) => c.academic_year).filter(Boolean));
+    let start: Date | null = null, end: Date | null = null;
+    years.forEach((y) => {
+      const m = String(y).match(/\d{4}|\d{2}/g); if (!m) return;
+      const y1 = parseInt(m[0].length === 2 ? "20" + m[0] : m[0]);
+      const y2 = m[1] ? parseInt(m[1].length === 2 ? "20" + m[1] : m[1]) : y1;
+      const s = new Date(y1, 5, 1);
+      const e = y1 === y2 ? new Date(y1, 11, 31) : new Date(y2, 4, 31);
+      if (!start || s < start) start = s;
+      if (!end || e > end) end = e;
+    });
+    if (!start || !end) { const y = new Date().getFullYear(); start = new Date(y, 0, 1); end = new Date(y, 11, 31); }
+    const dates: string[] = [];
+    const d = new Date(start);
+    while (d <= end) { if (d.getDay() === wd) { const iso = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; dates.push(iso); } d.setDate(d.getDate() + 1); }
+    const rows = dates.flatMap((date) => classIds.map((cid) => ({ class_id: cid, date, type: "non_working", title: `${ADMIN_WD_NAMES[wd]} holiday` })));
+    for (let i = 0; i < rows.length; i += 500) {
+      const { error } = await supabase.from("calendar_events").upsert(rows.slice(i, i + 500), { onConflict: "class_id,date" });
+      if (error) { toast.error(error.message); setBusy(false); return; }
+    }
+    toast.success(`Marked ${dates.length} ${ADMIN_WD_NAMES[wd]}s as holiday`);
+    setBusy(false);
+    onDone();
+  }
+  return (
+    <Card className="mx-auto w-full max-w-sm rounded-2xl p-3 space-y-2">
+      <p className="text-xs font-semibold">Mark weekday as non-working</p>
+      <p className="text-[10px] text-muted-foreground">Applies to every occurrence in the academic year. Shown as holiday on student calendars.</p>
+      <div className="flex gap-2">
+        <select value={wd} onChange={(e) => setWd(parseInt(e.target.value))} className="flex-1 rounded-md border border-input bg-background px-2 py-1.5 text-xs">
+          {ADMIN_WD_NAMES.map((n, i) => <option key={i} value={i}>{n}</option>)}
+        </select>
+        <Button size="sm" onClick={apply} disabled={busy}>{busy ? "..." : "Mark"}</Button>
+      </div>
+    </Card>
   );
 }
 
