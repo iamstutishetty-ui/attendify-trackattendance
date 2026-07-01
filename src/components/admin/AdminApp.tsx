@@ -386,6 +386,7 @@ function CalendarTab() {
     const priority: Record<string, number> = { working: 1, non_working: 2, college_event: 3 };
     const out: Record<string, string> = {};
     (data as any[] ?? []).forEach((e) => {
+      if (e.type === "student_holiday") return; // teacher-only marks not visible to admin
       const cur = out[e.date];
       if (!cur || (priority[e.type] ?? 0) > (priority[cur] ?? 0)) out[e.date] = e.type;
     });
