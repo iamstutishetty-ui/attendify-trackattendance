@@ -71,7 +71,7 @@ function useStudentClasses() {
     // Working days = dates teacher marked attendance, MINUS non_working / college_event
     const nonWorkingByClass: Record<string, Set<string>> = {};
     (events as any[] ?? []).forEach((e) => {
-      if (e.type === "non_working" || e.type === "holiday" || e.type === "college_event") {
+      if (e.type === "non_working" || e.type === "student_holiday" || e.type === "holiday" || e.type === "college_event") {
         (nonWorkingByClass[e.class_id] ||= new Set()).add(e.date);
       }
     });
@@ -228,7 +228,7 @@ function CalendarTab() {
       (ev as any[] ?? []).forEach((e) => em.set(e.date, e.type));
       setEventMap(em);
       const h = new Set<string>();
-      (ev as any[] ?? []).forEach((e) => { if (e.type === "holiday" || e.type === "non_working") h.add(e.date); });
+      (ev as any[] ?? []).forEach((e) => { if (e.type === "holiday" || e.type === "non_working" || e.type === "student_holiday") h.add(e.date); });
       setHolidays(h);
     });
   }, [activeClass, user]);
@@ -278,11 +278,11 @@ function CalendarTab() {
             const status = attMap.get(cell.iso);
             const ev = eventMap.get(cell.iso);
             const cls = ev === "college_event" ? "text-white font-bold"
-              : ev === "non_working" || ev === "holiday" ? "text-white font-bold"
+              : ev === "non_working" || ev === "holiday" || ev === "student_holiday" ? "text-white font-bold"
               : status === "present" ? "text-white font-bold"
               : status === "absent" ? "text-white font-bold"
               : "bg-secondary text-foreground/70 font-bold";
-            return <div key={i} className={`aspect-square grid place-items-center rounded-lg text-[11px] font-semibold transition-colors ${cls}`} style={ev === "college_event" ? {background:"#6baed6"} : ev === "non_working" || ev === "holiday" ? {background:"#f4c430"} : status === "present" ? {background:"#80b946"} : status === "absent" ? {background:"#e05c5c"} : {}}>{cell.d}</div>;
+            return <div key={i} className={`aspect-square grid place-items-center rounded-lg text-[11px] font-semibold transition-colors ${cls}`} style={ev === "college_event" ? {background:"#6baed6"} : ev === "non_working" || ev === "holiday" || ev === "student_holiday" ? {background:"#f4c430"} : status === "present" ? {background:"#80b946"} : status === "absent" ? {background:"#e05c5c"} : {}}>{cell.d}</div>;
           })}
         </div>
         <div className="mt-3 flex flex-wrap justify-center gap-3 text-[11px]">

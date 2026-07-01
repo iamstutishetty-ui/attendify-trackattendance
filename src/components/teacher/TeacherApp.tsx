@@ -617,7 +617,7 @@ function AttendanceTab() {
       // Working dates = attendance dates minus non_working/college_event
       const nonWorking = new Set<string>();
       ((evRes.data as any[]) ?? []).forEach((e) => {
-        if (e.type === "non_working" || e.type === "holiday" || e.type === "college_event") nonWorking.add(e.date);
+        if (e.type === "non_working" || e.type === "student_holiday" || e.type === "holiday" || e.type === "college_event") nonWorking.add(e.date);
       });
       const workingDates = Array.from(new Set(((attRes.data as any[]) ?? [])
         .map((a) => a.date as string)
@@ -773,7 +773,7 @@ function CalendarTab() {
     return () => { supabase.removeChannel(ch); };
   }, [user, load]);
 
-  async function markDate(date: string, type: "working" | "non_working") {
+  async function markDate(date: string, type: "working" | "student_holiday") {
     if (classIds.length === 0) { toast.error("Create a class first"); return; }
     const rows = classIds.map((cid) => ({
       class_id: cid, date, type,
@@ -789,7 +789,7 @@ function CalendarTab() {
   }
   function handleDateDoubleClick(date: string) {
     if (clickTimer.current) clearTimeout(clickTimer.current);
-    markDate(date, "non_working");
+    markDate(date, "student_holiday");
   }
 
   if (classIds.length === 0) return <EmptyState icon={CalendarDays} title="No classes" text="Create a class first." />;
@@ -799,6 +799,7 @@ function CalendarTab() {
   const colorOf = (t: string) =>
     t === "working" ? "text-white font-bold" :
     t === "non_working" ? "text-white font-bold" :
+    t === "student_holiday" ? "text-white font-bold" :
     t === "college_event" ? "text-white font-bold" :
     "bg-muted text-muted-foreground font-bold";
 
@@ -819,7 +820,7 @@ function CalendarTab() {
           {days.map((cell, i) => {
             if (!cell) return <div key={i} />;
             const event = eventMap[cell.iso];
-            return <button key={cell.iso} onClick={() => handleDateClick(cell.iso)} onDoubleClick={() => handleDateDoubleClick(cell.iso)} className={`aspect-square rounded-lg text-[11px] font-semibold transition ${event ? colorOf(event.type) : "bg-secondary text-foreground/70 font-bold"}`} style={event?.type === "working" ? {background:"#80b946"} : event?.type === "non_working" ? {background:"#e05c5c"} : event?.type === "college_event" ? {background:"#6baed6"} : {}}>{cell.d}</button>;
+            return <button key={cell.iso} onClick={() => handleDateClick(cell.iso)} onDoubleClick={() => handleDateDoubleClick(cell.iso)} className={`aspect-square rounded-lg text-[11px] font-semibold transition ${event ? colorOf(event.type) : "bg-secondary text-foreground/70 font-bold"}`} style={event?.type === "working" ? {background:"#80b946"} : event?.type === "non_working" || event?.type === "student_holiday" ? {background:"#e05c5c"} : event?.type === "college_event" ? {background:"#6baed6"} : {}}>{cell.d}</button>;
           })}
         </div>
         <div className="mt-2 flex flex-wrap justify-center gap-3 text-[10px]">
@@ -857,7 +858,7 @@ function MarkWeekdayOff({ classIds, onDone }: { classIds: string[]; onDone: () =
     const dates: string[] = [];
     const d = new Date(start);
     while (d <= end) { if (d.getDay() === wd) { const iso = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; dates.push(iso); } d.setDate(d.getDate() + 1); }
-    const rows = dates.flatMap((date) => classIds.map((cid) => ({ class_id: cid, date, type: "non_working", title: `${WD_NAMES[wd]} holiday` })));
+    const rows = dates.flatMap((date) => classIds.map((cid) => ({ class_id: cid, date, type: "student_holiday", title: `${WD_NAMES[wd]} holiday` })));
     for (let i = 0; i < rows.length; i += 500) {
       const { error } = await supabase.from("calendar_events").upsert(rows.slice(i, i + 500), { onConflict: "class_id,date" });
       if (error) { toast.error(error.message); setBusy(false); return; }
@@ -869,7 +870,6 @@ function MarkWeekdayOff({ classIds, onDone }: { classIds: string[]; onDone: () =
   return (
     <Card className="mx-auto w-full max-w-sm rounded-2xl p-3 space-y-2">
       <p className="text-xs font-semibold">Mark weekday as non-working</p>
-      <p className="text-[10px] text-muted-foreground">Applies to every occurrence in the academic year. Shown as holiday on student calendars.</p>
       <div className="flex gap-2">
         <select value={wd} onChange={(e) => setWd(parseInt(e.target.value))} className="flex-1 rounded-md border border-input bg-background px-2 py-1.5 text-xs">
           {WD_NAMES.map((n, i) => <option key={i} value={i}>{n}</option>)}
@@ -913,7 +913,7 @@ function DefaultersTab() {
       // Working days per class = attendance dates MINUS non_working/college_event/holiday
       const nonWorkingByClass: Record<string, Set<string>> = {};
       ((evRes.data as any[]) ?? []).forEach((e) => {
-        if (e.type === "non_working" || e.type === "holiday" || e.type === "college_event") {
+        if (e.type === "non_working" || e.type === "student_holiday" || e.type === "holiday" || e.type === "college_event") {
           (nonWorkingByClass[e.class_id] ||= new Set()).add(e.date);
         }
       });
