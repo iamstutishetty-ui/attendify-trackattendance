@@ -82,7 +82,7 @@ export function AuthScreen() {
             id: uid, user_id_text: userId.trim().toLowerCase(), full_name: fullName.trim(), recovery_email: email.trim().toLowerCase(),
           });
           if (pErr && !pErr.message.includes("duplicate")) throw pErr;
-          const { error: rErr } = await supabase.from("user_roles").insert({ user_id: uid, role });
+          const { error: rErr } = await supabase.from("user_roles").insert({ user_id: uid, role: role! });
           if (rErr && !rErr.message.includes("duplicate")) throw rErr;
         }
         await refresh();
