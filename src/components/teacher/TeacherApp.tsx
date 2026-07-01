@@ -958,7 +958,7 @@ function ProfileTab() {
         <p className="text-xs text-muted-foreground">@{profile?.user_id_text} · {role}</p>
       </Card>
       <Button variant="outline" onClick={signOut} className="h-11 w-full rounded-xl">Log out</Button>
-      <Button variant="destructive" disabled={busy} onClick={handleDelete} className="h-11 w-full rounded-xl">
+      <Button disabled={busy} onClick={handleDelete} className="h-11 w-full rounded-xl bg-[#f4a5a0] text-white hover:bg-[#ef8a83] dark:bg-[#c96a63] dark:hover:bg-[#b95a53]">
         {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Delete my account
       </Button>
     </section>

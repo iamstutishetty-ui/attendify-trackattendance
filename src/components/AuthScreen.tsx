@@ -17,7 +17,7 @@ const roles: { value: AppRole; label: string; icon: React.ElementType; desc: str
 
 export function AuthScreen() {
   const [mode, setMode] = React.useState<"login" | "signup" | "forgot">("login");
-  const [role, setRole] = React.useState<AppRole>("student");
+  const [role, setRole] = React.useState<AppRole | null>(null);
   const [userId, setUserId] = React.useState("");
   const [fullName, setFullName] = React.useState("");
   const [email, setEmail] = React.useState("");
@@ -51,6 +51,7 @@ export function AuthScreen() {
     if (!userId.trim() || !password) { toast.error("Enter ID and password"); return; }
     if (mode === "signup" && !fullName.trim()) { toast.error("Enter full name"); return; }
     if (mode === "signup" && !email.trim()) { toast.error("Enter recovery email"); return; }
+    if (mode === "signup" && !role) { toast.error("Select a role"); return; }
     setBusy(true);
     try {
       const authEmail = idToEmail(userId);
@@ -81,7 +82,7 @@ export function AuthScreen() {
             id: uid, user_id_text: userId.trim().toLowerCase(), full_name: fullName.trim(), recovery_email: email.trim().toLowerCase(),
           });
           if (pErr && !pErr.message.includes("duplicate")) throw pErr;
-          const { error: rErr } = await supabase.from("user_roles").insert({ user_id: uid, role });
+          const { error: rErr } = await supabase.from("user_roles").insert({ user_id: uid, role: role! });
           if (rErr && !rErr.message.includes("duplicate")) throw rErr;
         }
         await refresh();
@@ -185,7 +186,7 @@ export function AuthScreen() {
             </Button>
           </form>
         </div>
-        <p className="mt-6 text-center text-xs text-muted-foreground">No phone needed — your ID and password are enough.</p>
+        
       </div>
     </div>
   );
