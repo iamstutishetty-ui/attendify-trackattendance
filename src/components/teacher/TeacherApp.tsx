@@ -820,7 +820,7 @@ function CalendarTab() {
           {days.map((cell, i) => {
             if (!cell) return <div key={i} />;
             const event = eventMap[cell.iso];
-            return <button key={cell.iso} onClick={() => handleDateClick(cell.iso)} onDoubleClick={() => handleDateDoubleClick(cell.iso)} className={`aspect-square rounded-lg text-[11px] font-semibold transition ${event ? colorOf(event.type) : "bg-secondary text-foreground/70 font-bold"}`} style={event?.type === "working" ? {background:"#80b946"} : event?.type === "non_working" ? {background:"#e05c5c"} : event?.type === "college_event" ? {background:"#6baed6"} : {}}>{cell.d}</button>;
+            return <button key={cell.iso} onClick={() => handleDateClick(cell.iso)} onDoubleClick={() => handleDateDoubleClick(cell.iso)} className={`aspect-square rounded-lg text-[11px] font-semibold transition ${event ? colorOf(event.type) : "bg-secondary text-foreground/70 font-bold"}`} style={event?.type === "working" ? {background:"#80b946"} : event?.type === "non_working" || event?.type === "student_holiday" ? {background:"#e05c5c"} : event?.type === "college_event" ? {background:"#6baed6"} : {}}>{cell.d}</button>;
           })}
         </div>
         <div className="mt-2 flex flex-wrap justify-center gap-3 text-[10px]">
