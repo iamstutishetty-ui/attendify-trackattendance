@@ -278,11 +278,11 @@ function CalendarTab() {
             const status = attMap.get(cell.iso);
             const ev = eventMap.get(cell.iso);
             const cls = ev === "college_event" ? "text-white font-bold"
-              : ev === "non_working" || ev === "holiday" ? "text-white font-bold"
+              : ev === "non_working" || ev === "holiday" || ev === "student_holiday" ? "text-white font-bold"
               : status === "present" ? "text-white font-bold"
               : status === "absent" ? "text-white font-bold"
               : "bg-secondary text-foreground/70 font-bold";
-            return <div key={i} className={`aspect-square grid place-items-center rounded-lg text-[11px] font-semibold transition-colors ${cls}`} style={ev === "college_event" ? {background:"#6baed6"} : ev === "non_working" || ev === "holiday" ? {background:"#f4c430"} : status === "present" ? {background:"#80b946"} : status === "absent" ? {background:"#e05c5c"} : {}}>{cell.d}</div>;
+            return <div key={i} className={`aspect-square grid place-items-center rounded-lg text-[11px] font-semibold transition-colors ${cls}`} style={ev === "college_event" ? {background:"#6baed6"} : ev === "non_working" || ev === "holiday" || ev === "student_holiday" ? {background:"#f4c430"} : status === "present" ? {background:"#80b946"} : status === "absent" ? {background:"#e05c5c"} : {}}>{cell.d}</div>;
           })}
         </div>
         <div className="mt-3 flex flex-wrap justify-center gap-3 text-[11px]">
