@@ -773,7 +773,7 @@ function CalendarTab() {
     return () => { supabase.removeChannel(ch); };
   }, [user, load]);
 
-  async function markDate(date: string, type: "working" | "non_working") {
+  async function markDate(date: string, type: "working" | "student_holiday") {
     if (classIds.length === 0) { toast.error("Create a class first"); return; }
     const rows = classIds.map((cid) => ({
       class_id: cid, date, type,
@@ -789,7 +789,7 @@ function CalendarTab() {
   }
   function handleDateDoubleClick(date: string) {
     if (clickTimer.current) clearTimeout(clickTimer.current);
-    markDate(date, "non_working");
+    markDate(date, "student_holiday");
   }
 
   if (classIds.length === 0) return <EmptyState icon={CalendarDays} title="No classes" text="Create a class first." />;
