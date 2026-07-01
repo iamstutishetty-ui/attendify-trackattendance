@@ -858,7 +858,7 @@ function MarkWeekdayOff({ classIds, onDone }: { classIds: string[]; onDone: () =
     const dates: string[] = [];
     const d = new Date(start);
     while (d <= end) { if (d.getDay() === wd) { const iso = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; dates.push(iso); } d.setDate(d.getDate() + 1); }
-    const rows = dates.flatMap((date) => classIds.map((cid) => ({ class_id: cid, date, type: "non_working", title: `${WD_NAMES[wd]} holiday` })));
+    const rows = dates.flatMap((date) => classIds.map((cid) => ({ class_id: cid, date, type: "student_holiday", title: `${WD_NAMES[wd]} holiday` })));
     for (let i = 0; i < rows.length; i += 500) {
       const { error } = await supabase.from("calendar_events").upsert(rows.slice(i, i + 500), { onConflict: "class_id,date" });
       if (error) { toast.error(error.message); setBusy(false); return; }
@@ -870,7 +870,6 @@ function MarkWeekdayOff({ classIds, onDone }: { classIds: string[]; onDone: () =
   return (
     <Card className="mx-auto w-full max-w-sm rounded-2xl p-3 space-y-2">
       <p className="text-xs font-semibold">Mark weekday as non-working</p>
-      <p className="text-[10px] text-muted-foreground">Applies to every occurrence in the academic year. Shown as holiday on student calendars.</p>
       <div className="flex gap-2">
         <select value={wd} onChange={(e) => setWd(parseInt(e.target.value))} className="flex-1 rounded-md border border-input bg-background px-2 py-1.5 text-xs">
           {WD_NAMES.map((n, i) => <option key={i} value={i}>{n}</option>)}
