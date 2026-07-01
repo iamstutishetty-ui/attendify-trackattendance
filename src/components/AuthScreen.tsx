@@ -51,6 +51,7 @@ export function AuthScreen() {
     if (!userId.trim() || !password) { toast.error("Enter ID and password"); return; }
     if (mode === "signup" && !fullName.trim()) { toast.error("Enter full name"); return; }
     if (mode === "signup" && !email.trim()) { toast.error("Enter recovery email"); return; }
+    if (mode === "signup" && !role) { toast.error("Select a role"); return; }
     setBusy(true);
     try {
       const authEmail = idToEmail(userId);
