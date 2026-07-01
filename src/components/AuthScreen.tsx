@@ -186,7 +186,7 @@ export function AuthScreen() {
             </Button>
           </form>
         </div>
-        <p className="mt-6 text-center text-xs text-muted-foreground">No phone needed — your ID and password are enough.</p>
+        
       </div>
     </div>
   );
