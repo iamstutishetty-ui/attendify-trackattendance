@@ -799,6 +799,7 @@ function CalendarTab() {
   const colorOf = (t: string) =>
     t === "working" ? "text-white font-bold" :
     t === "non_working" ? "text-white font-bold" :
+    t === "student_holiday" ? "text-white font-bold" :
     t === "college_event" ? "text-white font-bold" :
     "bg-muted text-muted-foreground font-bold";
 
