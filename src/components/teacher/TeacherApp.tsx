@@ -913,7 +913,7 @@ function DefaultersTab() {
       // Working days per class = attendance dates MINUS non_working/college_event/holiday
       const nonWorkingByClass: Record<string, Set<string>> = {};
       ((evRes.data as any[]) ?? []).forEach((e) => {
-        if (e.type === "non_working" || e.type === "holiday" || e.type === "college_event") {
+        if (e.type === "non_working" || e.type === "student_holiday" || e.type === "holiday" || e.type === "college_event") {
           (nonWorkingByClass[e.class_id] ||= new Set()).add(e.date);
         }
       });
