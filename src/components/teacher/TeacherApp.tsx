@@ -617,7 +617,7 @@ function AttendanceTab() {
       // Working dates = attendance dates minus non_working/college_event
       const nonWorking = new Set<string>();
       ((evRes.data as any[]) ?? []).forEach((e) => {
-        if (e.type === "non_working" || e.type === "holiday" || e.type === "college_event") nonWorking.add(e.date);
+        if (e.type === "non_working" || e.type === "student_holiday" || e.type === "holiday" || e.type === "college_event") nonWorking.add(e.date);
       });
       const workingDates = Array.from(new Set(((attRes.data as any[]) ?? [])
         .map((a) => a.date as string)
