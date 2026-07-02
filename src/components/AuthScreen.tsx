@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { GraduationCap, ShieldCheck, BookOpen, Loader2, ArrowLeft } from "lucide-react";
+import { GraduationCap, ShieldCheck, BookOpen, Loader2, ArrowLeft, Eye, EyeOff, X, User as UserIcon } from "lucide-react";
 import { useServerFn } from "@tanstack/react-start";
 import { resetPasswordWithRecovery } from "@/lib/accounts.functions";
 
@@ -15,6 +15,34 @@ const roles: { value: AppRole; label: string; icon: React.ElementType; desc: str
   { value: "student", label: "Student", icon: GraduationCap, desc: "View attendance" },
 ];
 
+/* ---------- Remembered accounts on this device ---------- */
+const REMEMBER_KEY = "attendify:remembered_accounts";
+type RememberedAccount = { userIdText: string; fullName?: string; lastUsedAt: number };
+
+function loadRemembered(): RememberedAccount[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(REMEMBER_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((a) => a && typeof a.userIdText === "string")
+      .sort((a, b) => (b.lastUsedAt ?? 0) - (a.lastUsedAt ?? 0));
+  } catch { return []; }
+}
+function rememberAccount(a: Omit<RememberedAccount, "lastUsedAt">) {
+  if (typeof window === "undefined") return;
+  const list = loadRemembered().filter((x) => x.userIdText !== a.userIdText);
+  list.unshift({ ...a, lastUsedAt: Date.now() });
+  localStorage.setItem(REMEMBER_KEY, JSON.stringify(list.slice(0, 6)));
+}
+function forgetAccount(userIdText: string) {
+  if (typeof window === "undefined") return;
+  const list = loadRemembered().filter((x) => x.userIdText !== userIdText);
+  localStorage.setItem(REMEMBER_KEY, JSON.stringify(list));
+}
+
 export function AuthScreen() {
   const [mode, setMode] = React.useState<"login" | "signup" | "forgot">("login");
   const [role, setRole] = React.useState<AppRole | null>(null);
@@ -22,9 +50,25 @@ export function AuthScreen() {
   const [fullName, setFullName] = React.useState("");
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
+  const [showPassword, setShowPassword] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
+  const [remembered, setRemembered] = React.useState<RememberedAccount[]>(() => loadRemembered());
+  const passwordRef = React.useRef<HTMLInputElement | null>(null);
   const { refresh } = useAuth();
   const resetPw = useServerFn(resetPasswordWithRecovery);
+
+  function pickAccount(a: RememberedAccount) {
+    setMode("login");
+    setUserId(a.userIdText);
+    setPassword("");
+    setShowPassword(false);
+    setTimeout(() => passwordRef.current?.focus(), 30);
+  }
+  function removeAccount(e: React.MouseEvent, uid: string) {
+    e.stopPropagation();
+    forgetAccount(uid);
+    setRemembered(loadRemembered());
+  }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -85,6 +129,7 @@ export function AuthScreen() {
           const { error: rErr } = await supabase.from("user_roles").insert({ user_id: uid, role: role! });
           if (rErr && !rErr.message.includes("duplicate")) throw rErr;
         }
+        rememberAccount({ userIdText: userId.trim().toLowerCase(), fullName: fullName.trim() });
         await refresh();
         toast.success("Account created");
       } else {
@@ -93,6 +138,7 @@ export function AuthScreen() {
           if (error.message.toLowerCase().includes("invalid")) throw new Error("Wrong ID or password");
           throw error;
         }
+        rememberAccount({ userIdText: userId.trim().toLowerCase() });
         toast.success("Welcome back");
       }
     } catch (err: any) {
@@ -102,13 +148,48 @@ export function AuthScreen() {
     }
   }
 
+  const showRemembered = mode === "login" && remembered.length > 0;
+
   return (
     <div className="min-h-screen bg-background">
       <div className="blue-gradient h-44 rounded-b-[2.5rem] px-6 pt-12 text-white">
         <h1 className="brand-font text-4xl !text-white" style={{ background: "none", WebkitTextFillColor: "white" }}>Attendify</h1>
       </div>
 
-      <div className="-mt-20 px-5 pb-8">
+      <div className="-mt-20 px-5 pb-8 space-y-4">
+        {showRemembered && (
+          <div className="card-soft rounded-3xl border bg-card p-4">
+            <p className="mb-3 text-xs font-semibold text-muted-foreground">Log in as</p>
+            <div className="space-y-2">
+              {remembered.map((a) => (
+                <button
+                  type="button"
+                  key={a.userIdText}
+                  onClick={() => pickAccount(a)}
+                  className="group flex w-full items-center gap-3 rounded-2xl border border-border bg-background p-3 text-left transition hover:border-primary/40 hover:bg-primary/5"
+                >
+                  <div className="grid h-11 w-11 shrink-0 place-items-center rounded-full blue-gradient text-base font-bold text-white">
+                    {(a.fullName || a.userIdText)[0]?.toUpperCase() || <UserIcon className="h-5 w-5" />}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    {a.fullName && <p className="truncate text-sm font-semibold">{a.fullName}</p>}
+                    <p className="truncate text-xs text-muted-foreground">@{a.userIdText}</p>
+                    <p className="mt-0.5 select-none font-mono text-xs tracking-widest text-muted-foreground/70">••••••••</p>
+                  </div>
+                  <span
+                    onClick={(e) => removeAccount(e, a.userIdText)}
+                    role="button"
+                    aria-label={`Remove ${a.userIdText}`}
+                    className="grid h-7 w-7 shrink-0 place-items-center rounded-full text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                  >
+                    <X className="h-4 w-4" />
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         <div className="card-soft rounded-3xl border bg-card p-5">
           {mode !== "forgot" ? (
             <div className="flex gap-2 rounded-full bg-secondary p-1">
@@ -154,7 +235,26 @@ export function AuthScreen() {
             )}
             <div className="space-y-1.5">
               <Label htmlFor="pw">{mode === "forgot" ? "New password" : "Password"}</Label>
-              <Input id="pw" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder={mode === "forgot" ? "Choose a new password" : "Enter password"} className="rounded-xl h-11" />
+              <div className="relative">
+                <Input
+                  id="pw"
+                  ref={passwordRef}
+                  type={showPassword ? "text" : "password"}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder={mode === "forgot" ? "Choose a new password" : "Enter password"}
+                  className="rounded-xl h-11 pr-11"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((v) => !v)}
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                  className="absolute inset-y-0 right-0 grid w-11 place-items-center text-muted-foreground hover:text-foreground"
+                  tabIndex={-1}
+                >
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
               {mode === "login" && (
                 <div className="pt-1 text-right">
                   <button type="button" onClick={() => { setMode("forgot"); setPassword(""); setEmail(""); }} className="text-xs font-medium text-primary hover:underline">
@@ -186,7 +286,6 @@ export function AuthScreen() {
             </Button>
           </form>
         </div>
-        
       </div>
     </div>
   );
