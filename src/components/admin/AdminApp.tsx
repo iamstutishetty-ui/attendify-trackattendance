@@ -520,12 +520,17 @@ function DefaultersTab() {
 
   const load = React.useCallback(async () => {
     setLoading(true);
-    // Pull every class admin can see
-    const { data: classes } = await supabase.from("classes").select("id, name");
+    // Scope strictly to classes this admin has saved (admin_saved_classes is RLS-scoped to auth.uid()).
+    const { data: saved } = await (supabase as any)
+      .from("admin_saved_classes").select("class_id");
+    const savedIds = ((saved as any[]) ?? []).map((r) => r.class_id);
+    if (savedIds.length === 0) { setRows([]); setLoading(false); return; }
+    const { data: classes } = await supabase.from("classes").select("id, name").in("id", savedIds);
     const classList = (classes as any[]) ?? [];
     if (classList.length === 0) { setRows([]); setLoading(false); return; }
 
     const classIds = classList.map((c) => c.id);
+
     const [{ data: enrolls }, { data: att }, { data: ev }] = await Promise.all([
       supabase.from("class_enrollments").select("class_id, student_id, roll_number").in("class_id", classIds),
       supabase.from("attendance_records").select("class_id, student_id, status, date").in("class_id", classIds),
@@ -595,9 +600,11 @@ function DefaultersTab() {
       .on("postgres_changes", { event: "*", schema: "public", table: "attendance_records" }, () => load())
       .on("postgres_changes", { event: "*", schema: "public", table: "class_enrollments" }, () => load())
       .on("postgres_changes", { event: "*", schema: "public", table: "calendar_events" }, () => load())
+      .on("postgres_changes", { event: "*", schema: "public", table: "admin_saved_classes" }, () => load())
       .subscribe();
     return () => { supabase.removeChannel(ch); };
   }, [load]);
+
 
   const filtered = view === "below" ? rows.filter((r) => r.pct < 75) : rows.filter((r) => r.pct >= 75);
 
