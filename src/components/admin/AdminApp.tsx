@@ -600,9 +600,11 @@ function DefaultersTab() {
       .on("postgres_changes", { event: "*", schema: "public", table: "attendance_records" }, () => load())
       .on("postgres_changes", { event: "*", schema: "public", table: "class_enrollments" }, () => load())
       .on("postgres_changes", { event: "*", schema: "public", table: "calendar_events" }, () => load())
+      .on("postgres_changes", { event: "*", schema: "public", table: "admin_saved_classes" }, () => load())
       .subscribe();
     return () => { supabase.removeChannel(ch); };
   }, [load]);
+
 
   const filtered = view === "below" ? rows.filter((r) => r.pct < 75) : rows.filter((r) => r.pct >= 75);
 
