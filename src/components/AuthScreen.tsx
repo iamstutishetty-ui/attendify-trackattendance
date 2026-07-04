@@ -17,7 +17,56 @@ const roles: { value: AppRole; label: string; icon: React.ElementType; desc: str
 
 /* ---------- Remembered accounts on this device ---------- */
 const REMEMBER_KEY = "attendify:remembered_accounts";
+const PW_KEY = "attendify:remembered_pw";
+const DEVICE_KEY = "attendify:device_key";
 type RememberedAccount = { userIdText: string; fullName?: string; lastUsedAt: number };
+
+function getDeviceKey(): string {
+  if (typeof window === "undefined") return "x";
+  let k = localStorage.getItem(DEVICE_KEY);
+  if (!k) {
+    k = Array.from(crypto.getRandomValues(new Uint8Array(24))).map((b) => b.toString(16).padStart(2, "0")).join("");
+    localStorage.setItem(DEVICE_KEY, k);
+  }
+  return k;
+}
+function obfuscate(text: string): string {
+  const key = getDeviceKey();
+  const bytes = new TextEncoder().encode(text);
+  const out = new Uint8Array(bytes.length);
+  for (let i = 0; i < bytes.length; i++) out[i] = bytes[i] ^ key.charCodeAt(i % key.length);
+  let bin = ""; for (let i = 0; i < out.length; i++) bin += String.fromCharCode(out[i]);
+  return btoa(bin);
+}
+function deobfuscate(b64: string): string {
+  try {
+    const key = getDeviceKey();
+    const bin = atob(b64);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i) ^ key.charCodeAt(i % key.length);
+    return new TextDecoder().decode(bytes);
+  } catch { return ""; }
+}
+function loadPwMap(): Record<string, string> {
+  if (typeof window === "undefined") return {};
+  try { return JSON.parse(localStorage.getItem(PW_KEY) || "{}") || {}; } catch { return {}; }
+}
+function savePassword(userIdText: string, password: string) {
+  if (typeof window === "undefined") return;
+  const map = loadPwMap();
+  map[userIdText] = obfuscate(password);
+  localStorage.setItem(PW_KEY, JSON.stringify(map));
+}
+function readPassword(userIdText: string): string {
+  const map = loadPwMap();
+  return map[userIdText] ? deobfuscate(map[userIdText]) : "";
+}
+function forgetPassword(userIdText: string) {
+  if (typeof window === "undefined") return;
+  const map = loadPwMap();
+  delete map[userIdText];
+  localStorage.setItem(PW_KEY, JSON.stringify(map));
+}
 
 function loadRemembered(): RememberedAccount[] {
   if (typeof window === "undefined") return [];
@@ -41,6 +90,10 @@ function forgetAccount(userIdText: string) {
   if (typeof window === "undefined") return;
   const list = loadRemembered().filter((x) => x.userIdText !== userIdText);
   localStorage.setItem(REMEMBER_KEY, JSON.stringify(list));
+  forgetPassword(userIdText);
+}
+function hasSavedPassword(userIdText: string): boolean {
+  return !!loadPwMap()[userIdText];
 }
 
 export function AuthScreen() {
