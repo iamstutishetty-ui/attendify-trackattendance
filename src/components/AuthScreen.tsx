@@ -17,7 +17,56 @@ const roles: { value: AppRole; label: string; icon: React.ElementType; desc: str
 
 /* ---------- Remembered accounts on this device ---------- */
 const REMEMBER_KEY = "attendify:remembered_accounts";
+const PW_KEY = "attendify:remembered_pw";
+const DEVICE_KEY = "attendify:device_key";
 type RememberedAccount = { userIdText: string; fullName?: string; lastUsedAt: number };
+
+function getDeviceKey(): string {
+  if (typeof window === "undefined") return "x";
+  let k = localStorage.getItem(DEVICE_KEY);
+  if (!k) {
+    k = Array.from(crypto.getRandomValues(new Uint8Array(24))).map((b) => b.toString(16).padStart(2, "0")).join("");
+    localStorage.setItem(DEVICE_KEY, k);
+  }
+  return k;
+}
+function obfuscate(text: string): string {
+  const key = getDeviceKey();
+  const bytes = new TextEncoder().encode(text);
+  const out = new Uint8Array(bytes.length);
+  for (let i = 0; i < bytes.length; i++) out[i] = bytes[i] ^ key.charCodeAt(i % key.length);
+  let bin = ""; for (let i = 0; i < out.length; i++) bin += String.fromCharCode(out[i]);
+  return btoa(bin);
+}
+function deobfuscate(b64: string): string {
+  try {
+    const key = getDeviceKey();
+    const bin = atob(b64);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i) ^ key.charCodeAt(i % key.length);
+    return new TextDecoder().decode(bytes);
+  } catch { return ""; }
+}
+function loadPwMap(): Record<string, string> {
+  if (typeof window === "undefined") return {};
+  try { return JSON.parse(localStorage.getItem(PW_KEY) || "{}") || {}; } catch { return {}; }
+}
+function savePassword(userIdText: string, password: string) {
+  if (typeof window === "undefined") return;
+  const map = loadPwMap();
+  map[userIdText] = obfuscate(password);
+  localStorage.setItem(PW_KEY, JSON.stringify(map));
+}
+function readPassword(userIdText: string): string {
+  const map = loadPwMap();
+  return map[userIdText] ? deobfuscate(map[userIdText]) : "";
+}
+function forgetPassword(userIdText: string) {
+  if (typeof window === "undefined") return;
+  const map = loadPwMap();
+  delete map[userIdText];
+  localStorage.setItem(PW_KEY, JSON.stringify(map));
+}
 
 function loadRemembered(): RememberedAccount[] {
   if (typeof window === "undefined") return [];
@@ -41,6 +90,10 @@ function forgetAccount(userIdText: string) {
   if (typeof window === "undefined") return;
   const list = loadRemembered().filter((x) => x.userIdText !== userIdText);
   localStorage.setItem(REMEMBER_KEY, JSON.stringify(list));
+  forgetPassword(userIdText);
+}
+function hasSavedPassword(userIdText: string): boolean {
+  return !!loadPwMap()[userIdText];
 }
 
 export function AuthScreen() {
@@ -51,6 +104,7 @@ export function AuthScreen() {
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
   const [showPassword, setShowPassword] = React.useState(false);
+  const [rememberPw, setRememberPw] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
   const [remembered, setRemembered] = React.useState<RememberedAccount[]>(() => loadRemembered());
   const passwordRef = React.useRef<HTMLInputElement | null>(null);
@@ -60,9 +114,16 @@ export function AuthScreen() {
   function pickAccount(a: RememberedAccount) {
     setMode("login");
     setUserId(a.userIdText);
-    setPassword("");
     setShowPassword(false);
-    setTimeout(() => passwordRef.current?.focus(), 30);
+    const saved = readPassword(a.userIdText);
+    if (saved) {
+      setPassword(saved);
+      setRememberPw(true);
+    } else {
+      setPassword("");
+      setRememberPw(false);
+      setTimeout(() => passwordRef.current?.focus(), 30);
+    }
   }
   function removeAccount(e: React.MouseEvent, uid: string) {
     e.stopPropagation();
@@ -138,7 +199,10 @@ export function AuthScreen() {
           if (error.message.toLowerCase().includes("invalid")) throw new Error("Wrong ID or password");
           throw error;
         }
-        rememberAccount({ userIdText: userId.trim().toLowerCase() });
+        const uid = userId.trim().toLowerCase();
+        rememberAccount({ userIdText: uid });
+        if (rememberPw) savePassword(uid, password);
+        else forgetPassword(uid);
         toast.success("Welcome back");
       }
     } catch (err: any) {
@@ -174,7 +238,9 @@ export function AuthScreen() {
                   <div className="min-w-0 flex-1">
                     {a.fullName && <p className="truncate text-sm font-semibold">{a.fullName}</p>}
                     <p className="truncate text-xs text-muted-foreground">@{a.userIdText}</p>
-                    <p className="mt-0.5 select-none font-mono text-xs tracking-widest text-muted-foreground/70">••••••••</p>
+                    <p className="mt-0.5 select-none font-mono text-xs tracking-widest text-muted-foreground/70">
+                      {hasSavedPassword(a.userIdText) ? "•••••••• (tap to fill)" : "Tap to log in"}
+                    </p>
                   </div>
                   <span
                     onClick={(e) => removeAccount(e, a.userIdText)}
@@ -256,13 +322,23 @@ export function AuthScreen() {
                 </button>
               </div>
               {mode === "login" && (
-                <div className="pt-1 text-right">
+                <div className="flex items-center justify-between pt-1">
+                  <label className="flex cursor-pointer items-center gap-2 text-xs font-medium text-muted-foreground">
+                    <input
+                      type="checkbox"
+                      checked={rememberPw}
+                      onChange={(e) => setRememberPw(e.target.checked)}
+                      className="h-4 w-4 accent-primary"
+                    />
+                    Remember password on this device
+                  </label>
                   <button type="button" onClick={() => { setMode("forgot"); setPassword(""); setEmail(""); }} className="text-xs font-medium text-primary hover:underline">
                     Forgot password?
                   </button>
                 </div>
               )}
             </div>
+
 
             {mode === "signup" && (
               <div>
