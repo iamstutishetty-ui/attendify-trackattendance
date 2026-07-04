@@ -104,6 +104,7 @@ export function AuthScreen() {
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
   const [showPassword, setShowPassword] = React.useState(false);
+  const [rememberPw, setRememberPw] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
   const [remembered, setRemembered] = React.useState<RememberedAccount[]>(() => loadRemembered());
   const passwordRef = React.useRef<HTMLInputElement | null>(null);
@@ -113,9 +114,16 @@ export function AuthScreen() {
   function pickAccount(a: RememberedAccount) {
     setMode("login");
     setUserId(a.userIdText);
-    setPassword("");
     setShowPassword(false);
-    setTimeout(() => passwordRef.current?.focus(), 30);
+    const saved = readPassword(a.userIdText);
+    if (saved) {
+      setPassword(saved);
+      setRememberPw(true);
+    } else {
+      setPassword("");
+      setRememberPw(false);
+      setTimeout(() => passwordRef.current?.focus(), 30);
+    }
   }
   function removeAccount(e: React.MouseEvent, uid: string) {
     e.stopPropagation();
