@@ -238,7 +238,9 @@ export function AuthScreen() {
                   <div className="min-w-0 flex-1">
                     {a.fullName && <p className="truncate text-sm font-semibold">{a.fullName}</p>}
                     <p className="truncate text-xs text-muted-foreground">@{a.userIdText}</p>
-                    <p className="mt-0.5 select-none font-mono text-xs tracking-widest text-muted-foreground/70">••••••••</p>
+                    <p className="mt-0.5 select-none font-mono text-xs tracking-widest text-muted-foreground/70">
+                      {hasSavedPassword(a.userIdText) ? "•••••••• (tap to fill)" : "Tap to log in"}
+                    </p>
                   </div>
                   <span
                     onClick={(e) => removeAccount(e, a.userIdText)}
