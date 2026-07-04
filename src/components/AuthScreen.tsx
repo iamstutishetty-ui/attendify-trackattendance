@@ -322,13 +322,23 @@ export function AuthScreen() {
                 </button>
               </div>
               {mode === "login" && (
-                <div className="pt-1 text-right">
+                <div className="flex items-center justify-between pt-1">
+                  <label className="flex cursor-pointer items-center gap-2 text-xs font-medium text-muted-foreground">
+                    <input
+                      type="checkbox"
+                      checked={rememberPw}
+                      onChange={(e) => setRememberPw(e.target.checked)}
+                      className="h-4 w-4 accent-primary"
+                    />
+                    Remember password on this device
+                  </label>
                   <button type="button" onClick={() => { setMode("forgot"); setPassword(""); setEmail(""); }} className="text-xs font-medium text-primary hover:underline">
                     Forgot password?
                   </button>
                 </div>
               )}
             </div>
+
 
             {mode === "signup" && (
               <div>
