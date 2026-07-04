@@ -199,7 +199,10 @@ export function AuthScreen() {
           if (error.message.toLowerCase().includes("invalid")) throw new Error("Wrong ID or password");
           throw error;
         }
-        rememberAccount({ userIdText: userId.trim().toLowerCase() });
+        const uid = userId.trim().toLowerCase();
+        rememberAccount({ userIdText: uid });
+        if (rememberPw) savePassword(uid, password);
+        else forgetPassword(uid);
         toast.success("Welcome back");
       }
     } catch (err: any) {
