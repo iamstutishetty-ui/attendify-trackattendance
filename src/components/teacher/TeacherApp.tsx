@@ -749,13 +749,18 @@ function AttendanceTab() {
 function CalendarTab() {
   const { user } = useAuth();
   const [classIds, setClassIds] = React.useState<string[]>([]);
+  const [classMonths, setClassMonths] = React.useState<Record<string, Set<string>>>({});
   const [events, setEvents] = React.useState<{ date: string; type: string }[]>([]);
   const [month, setMonth] = React.useState(() => { const d = new Date(); d.setDate(1); return d; });
   const clickTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const load = React.useCallback(async () => {
-    const { data: cls } = await supabase.from("classes").select("id").eq("teacher_id", user!.id);
-    const ids = (cls as any[] ?? []).map((c) => c.id);
+    const { data: cls } = await supabase.from("classes").select("id, months, months_secondary").eq("teacher_id", user!.id);
+    const rows = (cls as any[] ?? []);
+    const ids = rows.map((c) => c.id);
+    const cm: Record<string, Set<string>> = {};
+    rows.forEach((c) => { cm[c.id] = new Set<string>([...(c.months ?? []), ...(c.months_secondary ?? [])]); });
+    setClassMonths(cm);
     setClassIds(ids);
     if (ids.length === 0) { setEvents([]); return; }
     const { data } = await supabase.from("calendar_events").select("date, type").in("class_id", ids).order("date");
@@ -765,7 +770,6 @@ function CalendarTab() {
   }, [user]);
   React.useEffect(() => { load(); }, [load]);
 
-  // Realtime: pick up admin-marked college events instantly
   React.useEffect(() => {
     const ch = supabase.channel(`teacher-cal:${user?.id ?? "anon"}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "calendar_events" }, () => load())
@@ -773,15 +777,37 @@ function CalendarTab() {
     return () => { supabase.removeChannel(ch); };
   }, [user, load]);
 
+  const MONTH_NAMES = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+  const monthNameOfIso = (iso: string) => MONTH_NAMES[parseInt(iso.slice(5, 7), 10) - 1];
+  const allowedMonths = React.useMemo(() => {
+    const s = new Set<string>();
+    Object.values(classMonths).forEach((set) => set.forEach((m) => s.add(m)));
+    return s;
+  }, [classMonths]);
+
+  function classIdsForDate(iso: string): string[] {
+    const mn = monthNameOfIso(iso);
+    return classIds.filter((id) => classMonths[id]?.has(mn));
+  }
+
   async function markDate(date: string, type: "working" | "student_holiday") {
     if (classIds.length === 0) { toast.error("Create a class first"); return; }
-    const rows = classIds.map((cid) => ({
+    const targets = classIdsForDate(date);
+    if (targets.length === 0) { toast.error("Outside academic year for all your classes"); return; }
+    const rows = targets.map((cid) => ({
       class_id: cid, date, type,
       title: type === "working" ? "Working day" : "Non-working day",
     }));
     const { error } = await supabase.from("calendar_events").upsert(rows, { onConflict: "class_id,date" });
     if (error) toast.error(error.message);
     else { toast.success(type === "working" ? "Marked working" : "Marked non-working"); load(); }
+  }
+  async function clearDate(date: string) {
+    const targets = classIdsForDate(date);
+    if (targets.length === 0) return;
+    const { error } = await supabase.from("calendar_events").delete().in("class_id", targets).eq("date", date);
+    if (error) toast.error(error.message);
+    else { toast.success("Cleared"); load(); }
   }
   function handleDateClick(date: string) {
     if (clickTimer.current) clearTimeout(clickTimer.current);
@@ -805,14 +831,14 @@ function CalendarTab() {
 
   return (
     <section className="space-y-4">
-      <p className="text-xs text-muted-foreground text-center">Marks apply to <span className="font-bold">all your classes</span></p>
+      <p className="text-xs text-muted-foreground text-center">Marks apply within each class's academic year</p>
       <Card className="mx-auto w-full max-w-sm rounded-2xl p-3">
         <div className="flex items-center justify-between">
           <button onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))} className="rounded-full bg-secondary px-2.5 py-0.5 text-xs">‹</button>
           <p className="text-sm font-bold">{month.toLocaleDateString("en", { month: "long", year: "numeric" })}</p>
           <button onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))} className="rounded-full bg-secondary px-2.5 py-0.5 text-xs">›</button>
         </div>
-        <p className="mt-1 text-center text-[10px] text-muted-foreground">Tap = working · Double-tap = non-working</p>
+        <p className="mt-1 text-center text-[10px] text-muted-foreground">Tap = working · Double-tap = non-working · Long-press to clear</p>
         <div className="mt-2 grid grid-cols-7 gap-0.5 text-center text-[9px] text-muted-foreground">
           {["S","M","T","W","T","F","S"].map((d, i) => <div key={i}>{d}</div>)}
         </div>
@@ -820,7 +846,23 @@ function CalendarTab() {
           {days.map((cell, i) => {
             if (!cell) return <div key={i} />;
             const event = eventMap[cell.iso];
-            return <button key={cell.iso} onClick={() => handleDateClick(cell.iso)} onDoubleClick={() => handleDateDoubleClick(cell.iso)} className={`aspect-square rounded-lg text-[11px] font-semibold transition ${event ? colorOf(event.type) : "bg-secondary text-foreground/70 font-bold"}`} style={event?.type === "working" ? {background:"#80b946"} : event?.type === "non_working" || event?.type === "student_holiday" ? {background:"#e05c5c"} : event?.type === "college_event" ? {background:"#6baed6"} : {}}>{cell.d}</button>;
+            const inRange = allowedMonths.has(monthNameOfIso(cell.iso));
+            if (!inRange) {
+              return <div key={cell.iso} className="grid aspect-square place-items-center rounded-lg bg-muted/40 text-[11px] font-semibold text-muted-foreground/40">{cell.d}</div>;
+            }
+            const pressTimer: { t: ReturnType<typeof setTimeout> | null } = { t: null };
+            return (
+              <button
+                key={cell.iso}
+                onPointerDown={() => { pressTimer.t = setTimeout(() => { if (clickTimer.current) clearTimeout(clickTimer.current); clearDate(cell.iso); }, 600); }}
+                onPointerUp={() => { if (pressTimer.t) { clearTimeout(pressTimer.t); pressTimer.t = null; } }}
+                onPointerLeave={() => { if (pressTimer.t) { clearTimeout(pressTimer.t); pressTimer.t = null; } }}
+                onClick={() => handleDateClick(cell.iso)}
+                onDoubleClick={() => handleDateDoubleClick(cell.iso)}
+                className={`aspect-square rounded-lg text-[11px] font-semibold transition ${event ? colorOf(event.type) : "bg-secondary text-foreground/70 font-bold"}`}
+                style={event?.type === "working" ? {background:"#80b946"} : event?.type === "non_working" || event?.type === "student_holiday" ? {background:"#e05c5c"} : event?.type === "college_event" ? {background:"#6baed6"} : {}}
+              >{cell.d}</button>
+            );
           })}
         </div>
         <div className="mt-2 flex flex-wrap justify-center gap-3 text-[10px]">
@@ -829,10 +871,11 @@ function CalendarTab() {
           <Legend color="#6baed6" label="College event" />
         </div>
       </Card>
-      <MarkWeekdayOff classIds={classIds} onDone={load} />
+      <MarkWeekdayOff classIds={classIds} classMonths={classMonths} onDone={load} />
     </section>
   );
 }
+
 
 const WD_NAMES = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
 
