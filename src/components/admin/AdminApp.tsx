@@ -372,21 +372,27 @@ function StatusPill({ status }: { status: "present" | "absent" | "unmarked" }) {
 /* -------------------- CALENDAR -------------------- */
 function CalendarTab() {
   const [allClassIds, setAllClassIds] = React.useState<string[]>([]);
+  const [classMonths, setClassMonths] = React.useState<Record<string, Set<string>>>({});
   const [events, setEvents] = React.useState<Record<string, string>>({}); // date -> type
   const [month, setMonth] = React.useState(() => { const d = new Date(); d.setDate(1); return d; });
   const [busy, setBusy] = React.useState(false);
 
   const loadAll = React.useCallback(async () => {
-    const { data: cls } = await supabase.from("classes").select("id");
-    const ids = (cls as any[] ?? []).map((c) => c.id);
+    const { data: cls } = await supabase.from("classes").select("id, months, months_secondary");
+    const rows = (cls as any[] ?? []);
+    const ids = rows.map((c) => c.id);
+    const cm: Record<string, Set<string>> = {};
+    rows.forEach((c) => {
+      cm[c.id] = new Set<string>([...(c.months ?? []), ...(c.months_secondary ?? [])]);
+    });
+    setClassMonths(cm);
     setAllClassIds(ids);
     if (ids.length === 0) { setEvents({}); return; }
     const { data } = await supabase.from("calendar_events").select("date, type, class_id").in("class_id", ids);
-    // Aggregate per date — priority: college_event > non_working > working
     const priority: Record<string, number> = { working: 1, non_working: 2, college_event: 3 };
     const out: Record<string, string> = {};
     (data as any[] ?? []).forEach((e) => {
-      if (e.type === "student_holiday") return; // teacher-only marks not visible to admin
+      if (e.type === "student_holiday") return;
       const cur = out[e.date];
       if (!cur || (priority[e.type] ?? 0) > (priority[cur] ?? 0)) out[e.date] = e.type;
     });
@@ -395,7 +401,6 @@ function CalendarTab() {
 
   React.useEffect(() => { loadAll(); }, [loadAll]);
 
-  // Realtime: re-aggregate when anything changes (teacher attendance writes working days too)
   React.useEffect(() => {
     const ch = supabase.channel("admin-cal-all")
       .on("postgres_changes", { event: "*", schema: "public", table: "calendar_events" }, () => loadAll())
@@ -403,10 +408,25 @@ function CalendarTab() {
     return () => { supabase.removeChannel(ch); };
   }, [loadAll]);
 
+  const MONTH_NAMES = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+  const monthNameOfIso = (iso: string) => MONTH_NAMES[parseInt(iso.slice(5, 7), 10) - 1];
+
+  // Union of all classes' active months → dates outside are disabled
+  const allowedMonths = React.useMemo(() => {
+    const s = new Set<string>();
+    Object.values(classMonths).forEach((set) => set.forEach((m) => s.add(m)));
+    return s;
+  }, [classMonths]);
+
+  function classIdsForDate(iso: string): string[] {
+    const mn = monthNameOfIso(iso);
+    return allClassIds.filter((id) => classMonths[id]?.has(mn));
+  }
+
   async function cycleDate(iso: string) {
-    if (allClassIds.length === 0) { toast.error("No classes yet"); return; }
+    const targets = classIdsForDate(iso);
+    if (targets.length === 0) { toast.error("Outside academic year for all classes"); return; }
     const cur = events[iso];
-    // none → working → non_working → college_event → none
     const next: "working" | "non_working" | "college_event" | null =
       !cur ? "working" :
       cur === "working" ? "non_working" :
@@ -414,10 +434,10 @@ function CalendarTab() {
       null;
     setBusy(true);
     if (next === null) {
-      await supabase.from("calendar_events").delete().in("class_id", allClassIds).eq("date", iso);
+      await supabase.from("calendar_events").delete().in("class_id", targets).eq("date", iso);
     } else {
       const title = next === "working" ? "Working day" : next === "non_working" ? "Non-working" : "College event";
-      const rows = allClassIds.map((cid) => ({ class_id: cid, date: iso, type: next, title }));
+      const rows = targets.map((cid) => ({ class_id: cid, date: iso, type: next, title }));
       await supabase.from("calendar_events").upsert(rows, { onConflict: "class_id,date" });
     }
     setBusy(false);
@@ -433,7 +453,7 @@ function CalendarTab() {
 
   return (
     <section className="space-y-4">
-      <p className="text-center text-xs text-muted-foreground">Applies to <span className="font-bold">all classes</span></p>
+      <p className="text-center text-xs text-muted-foreground">Applies to <span className="font-bold">your saved classes</span> · dates outside academic year are disabled</p>
       <Card className="mx-auto w-full max-w-sm rounded-2xl p-3">
         <div className="flex items-center justify-between">
           <button onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))} className="rounded-full bg-secondary px-2.5 py-0.5 text-xs">‹</button>
@@ -447,9 +467,12 @@ function CalendarTab() {
         <div className="mt-0.5 grid grid-cols-7 gap-0.5">
           {days.map((cell, i) => {
             if (!cell) return <div key={i} />;
+            const inRange = allowedMonths.has(monthNameOfIso(cell.iso));
+            const disabled = busy || !inRange;
             return (
-              <button key={cell.iso} disabled={busy} onClick={() => cycleDate(cell.iso)}
-                className={`grid aspect-square place-items-center rounded-lg text-[11px] font-semibold transition ${colorOf(events[cell.iso])}`} style={events[cell.iso] === "working" ? {background:"#80b946"} : events[cell.iso] === "non_working" ? {background:"#e05c5c"} : events[cell.iso] === "college_event" ? {background:"#6baed6"} : {}}>
+              <button key={cell.iso} disabled={disabled} onClick={() => cycleDate(cell.iso)}
+                className={`grid aspect-square place-items-center rounded-lg text-[11px] font-semibold transition ${!inRange ? "bg-muted/40 text-muted-foreground/40 cursor-not-allowed" : colorOf(events[cell.iso])}`}
+                style={inRange && events[cell.iso] === "working" ? {background:"#80b946"} : inRange && events[cell.iso] === "non_working" ? {background:"#e05c5c"} : inRange && events[cell.iso] === "college_event" ? {background:"#6baed6"} : {}}>
                 {cell.d}
               </button>
             );
@@ -461,10 +484,11 @@ function CalendarTab() {
           <Legend color="#6baed6" label="College event" />
         </div>
       </Card>
-      <AdminMarkWeekdayOff classIds={allClassIds} onDone={loadAll} />
+      <AdminMarkWeekdayOff classIds={allClassIds} classMonths={classMonths} onDone={loadAll} />
     </section>
   );
 }
+
 
 const ADMIN_WD_NAMES = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
 
