@@ -492,9 +492,10 @@ function CalendarTab() {
 
 const ADMIN_WD_NAMES = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
 
-function AdminMarkWeekdayOff({ classIds, onDone }: { classIds: string[]; onDone: () => void }) {
+function AdminMarkWeekdayOff({ classIds, classMonths, onDone }: { classIds: string[]; classMonths: Record<string, Set<string>>; onDone: () => void }) {
   const [wd, setWd] = React.useState(0);
   const [busy, setBusy] = React.useState(false);
+  const MONTH_NAMES = ["January","February","March","April","May","June","July","August","September","October","November","December"];
   async function apply() {
     if (classIds.length === 0) { toast.error("No classes"); return; }
     setBusy(true);
@@ -514,12 +515,19 @@ function AdminMarkWeekdayOff({ classIds, onDone }: { classIds: string[]; onDone:
     const dates: string[] = [];
     const d = new Date(start);
     while (d <= end) { if (d.getDay() === wd) { const iso = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; dates.push(iso); } d.setDate(d.getDate() + 1); }
-    const rows = dates.flatMap((date) => classIds.map((cid) => ({ class_id: cid, date, type: "non_working", title: `${ADMIN_WD_NAMES[wd]} holiday` })));
+    // Only insert (class, date) pairs where the class's academic year includes that month
+    const rows = dates.flatMap((date) => {
+      const mn = MONTH_NAMES[parseInt(date.slice(5, 7), 10) - 1];
+      return classIds
+        .filter((cid) => classMonths[cid]?.has(mn))
+        .map((cid) => ({ class_id: cid, date, type: "non_working", title: `${ADMIN_WD_NAMES[wd]} holiday` }));
+    });
+    if (rows.length === 0) { toast.error("No dates fall within any class's academic year"); setBusy(false); return; }
     for (let i = 0; i < rows.length; i += 500) {
       const { error } = await supabase.from("calendar_events").upsert(rows.slice(i, i + 500), { onConflict: "class_id,date" });
       if (error) { toast.error(error.message); setBusy(false); return; }
     }
-    toast.success(`Marked ${dates.length} ${ADMIN_WD_NAMES[wd]}s as holiday`);
+    toast.success(`Marked ${ADMIN_WD_NAMES[wd]}s within each class's academic year`);
     setBusy(false);
     onDone();
   }
