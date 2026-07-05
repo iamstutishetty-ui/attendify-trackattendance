@@ -23,7 +23,7 @@ import {
 import {
   Layers, ClipboardCheck, CalendarDays, AlertTriangle, User as UserIcon, Plus,
   Copy, Search, Loader2, Check, X, ArrowUpRight, Pencil, Trash2, Download,
-  CheckCheck, XSquare, History, WifiOff, CloudUpload,
+  CheckCheck, History, WifiOff, CloudUpload,
 } from "lucide-react";
 import { toast } from "sonner";
 import jsPDF from "jspdf";
