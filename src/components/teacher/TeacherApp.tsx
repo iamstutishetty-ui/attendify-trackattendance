@@ -23,10 +23,13 @@ import {
 import {
   Layers, ClipboardCheck, CalendarDays, AlertTriangle, User as UserIcon, Plus,
   Copy, Search, Loader2, Check, X, ArrowUpRight, Pencil, Trash2, Download,
+  CheckCheck, History, WifiOff, CloudUpload,
 } from "lucide-react";
 import { toast } from "sonner";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import { enqueue as queueOffline, flush as flushOffline, queuedCount, isOnline } from "@/lib/attendance-offline";
+import { StudentHistoryDialog } from "@/components/StudentHistoryDialog";
 
 type Tab = "classes" | "attendance" | "calendar" | "defaulters" | "profile";
 type AttendanceMode = "whole_year" | "two_semester";
@@ -562,31 +565,107 @@ function AttendanceTab() {
     // Optimistic UI
     setStatuses((p) => ({ ...p, [id]: next }));
     const iso = toISODate(date);
+    await persistOne(activeClass, id, iso, next, cur);
+  }
+
+  async function persistOne(
+    class_id: string,
+    student_id: string,
+    iso: string,
+    next: "present" | "absent" | undefined,
+    cur: "present" | "absent" | undefined,
+  ) {
+    const online = isOnline();
     try {
+      if (!online) {
+        if (next === undefined) queueOffline({ kind: "delete", class_id, student_id, date: iso, ts: Date.now() });
+        else queueOffline({ kind: "upsert", class_id, student_id, date: iso, status: next, marked_by: user!.id, ts: Date.now() });
+        setPendingCount(queuedCount());
+        return;
+      }
       if (next === undefined) {
         const { error } = await supabase.from("attendance_records").delete()
-          .eq("class_id", activeClass).eq("student_id", id).eq("date", iso);
+          .eq("class_id", class_id).eq("student_id", student_id).eq("date", iso);
         if (error) throw error;
       } else {
         const { error } = await supabase.from("attendance_records").upsert(
-          { class_id: activeClass, student_id: id, date: iso, status: next, marked_by: user!.id },
+          { class_id, student_id, date: iso, status: next, marked_by: user!.id },
           { onConflict: "class_id,student_id,date" },
         );
         if (error) throw error;
         if (next === "present" && calendarEvents[iso] !== "working") {
           await supabase.from("calendar_events").upsert(
-            { class_id: activeClass, date: iso, type: "working", title: "Working day" },
+            { class_id, date: iso, type: "working", title: "Working day" },
             { onConflict: "class_id,date" },
           );
           setCalendarEvents((p) => ({ ...p, [iso]: "working" }));
         }
       }
     } catch (e: any) {
-      // Revert on failure
-      setStatuses((p) => ({ ...p, [id]: cur }));
-      toast.error(e.message || "Could not save");
+      // Fallback: queue for later sync
+      if (next === undefined) queueOffline({ kind: "delete", class_id, student_id, date: iso, ts: Date.now() });
+      else queueOffline({ kind: "upsert", class_id, student_id, date: iso, status: next, marked_by: user!.id, ts: Date.now() });
+      setPendingCount(queuedCount());
+      setStatuses((p) => ({ ...p, [student_id]: cur }));
+      toast.error("Saved offline — will sync when back online");
     }
   }
+
+  async function markAll(target: "present" | "absent") {
+    if (!activeClass || students.length === 0) return;
+    const iso = toISODate(date);
+    // Optimistic UI
+    setStatuses((p) => { const n = { ...p }; students.forEach((s) => { n[s.id] = target; }); return n; });
+    if (!isOnline()) {
+      students.forEach((s) =>
+        queueOffline({ kind: "upsert", class_id: activeClass, student_id: s.id, date: iso, status: target, marked_by: user!.id, ts: Date.now() }),
+      );
+      setPendingCount(queuedCount());
+      toast.success(`All marked ${target} (offline — will sync)`);
+      return;
+    }
+    const rows = students.map((s) => ({ class_id: activeClass, student_id: s.id, date: iso, status: target, marked_by: user!.id }));
+    const { error } = await supabase.from("attendance_records").upsert(rows, { onConflict: "class_id,student_id,date" });
+    if (error) { toast.error(error.message); return; }
+    if (target === "present" && calendarEvents[iso] !== "working") {
+      await supabase.from("calendar_events").upsert(
+        { class_id: activeClass, date: iso, type: "working", title: "Working day" },
+        { onConflict: "class_id,date" },
+      );
+      setCalendarEvents((p) => ({ ...p, [iso]: "working" }));
+    }
+    toast.success(`All ${students.length} marked ${target}`);
+  }
+
+  // Offline sync management
+  const [pendingCount, setPendingCount] = React.useState(0);
+  const [syncing, setSyncing] = React.useState(false);
+  const [online, setOnline] = React.useState(() => isOnline());
+  React.useEffect(() => {
+    setPendingCount(queuedCount());
+    const onOnline = async () => {
+      setOnline(true);
+      if (queuedCount() > 0) {
+        setSyncing(true);
+        const r = await flushOffline();
+        setSyncing(false);
+        setPendingCount(queuedCount());
+        if (r.ok > 0) toast.success(`Synced ${r.ok} offline change${r.ok === 1 ? "" : "s"}`);
+        loadData();
+      }
+    };
+    const onOffline = () => setOnline(false);
+    window.addEventListener("online", onOnline);
+    window.addEventListener("offline", onOffline);
+    // Try flushing on mount too
+    if (isOnline() && queuedCount() > 0) onOnline();
+    return () => {
+      window.removeEventListener("online", onOnline);
+      window.removeEventListener("offline", onOffline);
+    };
+  }, [loadData]);
+
+  const [historyStudent, setHistoryStudent] = React.useState<{ id: string; name: string; roll: string } | null>(null);
 
   async function downloadPdf() {
     if (!activeClass || !activeRow) return;
@@ -691,6 +770,30 @@ function AttendanceTab() {
 
       <WeeklyStrip date={date} onChange={setDate} events={calendarEvents} />
 
+      {(!online || pendingCount > 0) && (
+        <Card className={`rounded-2xl p-3 flex items-center gap-2 ${online ? "bg-amber-500/10 border-amber-500/30" : "bg-destructive/10 border-destructive/30"}`}>
+          {online ? <CloudUpload className="h-4 w-4 text-amber-600" /> : <WifiOff className="h-4 w-4 text-destructive" />}
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-semibold">
+              {online
+                ? (syncing ? "Syncing offline changes…" : `${pendingCount} change${pendingCount === 1 ? "" : "s"} pending sync`)
+                : `Offline — ${pendingCount} change${pendingCount === 1 ? "" : "s"} saved locally`}
+            </p>
+            <p className="text-[10px] text-muted-foreground">Marks are saved on this device and will sync automatically.</p>
+          </div>
+          {online && pendingCount > 0 && !syncing && (
+            <Button size="sm" variant="outline" onClick={async () => {
+              setSyncing(true);
+              const r = await flushOffline();
+              setSyncing(false);
+              setPendingCount(queuedCount());
+              if (r.ok > 0) toast.success(`Synced ${r.ok}`);
+              loadData();
+            }}>Sync now</Button>
+          )}
+        </Card>
+      )}
+
       <div className="grid grid-cols-2 gap-2">
         <Card className="rounded-2xl p-3 text-white" style={{ background: "#1DB954" }}>
           <p className="text-xs opacity-90">Present</p><p className="text-2xl font-bold">{presentCount}</p>
@@ -699,6 +802,17 @@ function AttendanceTab() {
           <p className="text-xs opacity-90">Absent</p><p className="text-2xl font-bold">{absentCount}</p>
         </Card>
       </div>
+
+      {students.length > 0 && (
+        <div className="grid grid-cols-2 gap-2">
+          <Button onClick={() => markAll("present")} className="h-11 rounded-xl text-white" style={{ background: "#1DB954" }}>
+            <CheckCheck className="mr-2 h-4 w-4" />Mark all present
+          </Button>
+          <Button onClick={() => markAll("absent")} className="h-11 rounded-xl text-white" style={{ background: "#E74C3C" }}>
+            <X className="mr-2 h-4 w-4" />Mark all absent
+          </Button>
+        </div>
+      )}
 
       <Button onClick={downloadPdf} disabled={downloading} variant="outline" className="h-11 w-full rounded-xl">
         {downloading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
@@ -729,18 +843,35 @@ function AttendanceTab() {
             const badgeStyle = st === "present" ? { background: "#1DB954" }
               : st === "absent" ? { background: "#E74C3C" } : undefined;
             return (
-              <button key={s.id} onClick={() => toggle(s.id)}
-                className={`flex w-full items-center gap-3 rounded-2xl border p-3 text-left transition ${tone}`}>
-                <span className="font-mono text-xs font-semibold text-muted-foreground w-16 shrink-0">{s.roll}</span>
-                <span className="flex-1 text-sm font-semibold">{s.name}</span>
-                <span style={badgeStyle} className={`grid h-9 w-9 place-items-center rounded-full ${badge}`}>
-                  {st === "present" ? <Check className="h-5 w-5" /> : st === "absent" ? <X className="h-5 w-5" /> : <span className="text-xs">—</span>}
-                </span>
-              </button>
+              <div key={s.id} className={`flex items-center gap-2 rounded-2xl border p-3 transition ${tone}`}>
+                <button onClick={() => toggle(s.id)} className="flex flex-1 items-center gap-3 text-left min-w-0">
+                  <span className="font-mono text-xs font-semibold text-muted-foreground w-16 shrink-0">{s.roll}</span>
+                  <span className="flex-1 text-sm font-semibold truncate">{s.name}</span>
+                  <span style={badgeStyle} className={`grid h-9 w-9 place-items-center rounded-full ${badge}`}>
+                    {st === "present" ? <Check className="h-5 w-5" /> : st === "absent" ? <X className="h-5 w-5" /> : <span className="text-xs">—</span>}
+                  </span>
+                </button>
+                <button
+                  onClick={() => setHistoryStudent(s)}
+                  aria-label="View attendance history"
+                  className="grid h-9 w-9 place-items-center rounded-full bg-secondary text-muted-foreground hover:bg-secondary/80 shrink-0"
+                >
+                  <History className="h-4 w-4" />
+                </button>
+              </div>
             );
           })}
         </div>
       )}
+
+      <StudentHistoryDialog
+        open={!!historyStudent}
+        onClose={() => setHistoryStudent(null)}
+        studentId={historyStudent?.id ?? null}
+        classId={activeClass || null}
+        studentName={historyStudent?.name}
+        studentRoll={historyStudent?.roll}
+      />
     </section>
   );
 }
@@ -868,6 +999,7 @@ const WD_NAMES = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","S
 
 function MarkWeekdayOff({ classIds, classMonths, onDone }: { classIds: string[]; classMonths: Record<string, Set<string>>; onDone: () => void }) {
   const [wd, setWd] = React.useState(0);
+  const [mode, setMode] = React.useState<"mark" | "unmark">("mark");
   const [busy, setBusy] = React.useState(false);
   const MONTH_NAMES = ["January","February","March","April","May","June","July","August","September","October","November","December"];
   async function apply() {
@@ -889,29 +1021,49 @@ function MarkWeekdayOff({ classIds, classMonths, onDone }: { classIds: string[];
     const dates: string[] = [];
     const d = new Date(start);
     while (d <= end) { if (d.getDay() === wd) { const iso = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; dates.push(iso); } d.setDate(d.getDate() + 1); }
-    const rows = dates.flatMap((date) => {
+    // (class, date) pairs limited to each class's active academic year
+    const pairs = dates.flatMap((date) => {
       const mn = MONTH_NAMES[parseInt(date.slice(5, 7), 10) - 1];
       return classIds
         .filter((cid) => classMonths[cid]?.has(mn))
-        .map((cid) => ({ class_id: cid, date, type: "student_holiday", title: `${WD_NAMES[wd]} holiday` }));
+        .map((cid) => ({ class_id: cid, date }));
     });
-    if (rows.length === 0) { toast.error("No dates fall within any class's academic year"); setBusy(false); return; }
-    for (let i = 0; i < rows.length; i += 500) {
-      const { error } = await supabase.from("calendar_events").upsert(rows.slice(i, i + 500), { onConflict: "class_id,date" });
+    if (pairs.length === 0) { toast.error("No dates fall within any class's academic year"); setBusy(false); return; }
+    if (mode === "mark") {
+      const rows = pairs.map((p) => ({ ...p, type: "student_holiday", title: `${WD_NAMES[wd]} holiday` }));
+      for (let i = 0; i < rows.length; i += 500) {
+        const { error } = await supabase.from("calendar_events").upsert(rows.slice(i, i + 500), { onConflict: "class_id,date" });
+        if (error) { toast.error(error.message); setBusy(false); return; }
+      }
+      toast.success(`Marked all ${WD_NAMES[wd]}s as non-working`);
+    } else {
+      // Unmark: delete non_working / student_holiday rows on those weekdays for these classes.
+      const classesToClear = Array.from(new Set(pairs.map((p) => p.class_id)));
+      const datesToClear = Array.from(new Set(pairs.map((p) => p.date)));
+      const { error } = await supabase.from("calendar_events").delete()
+        .in("class_id", classesToClear)
+        .in("date", datesToClear)
+        .in("type", ["non_working", "student_holiday"]);
       if (error) { toast.error(error.message); setBusy(false); return; }
+      toast.success(`Cleared ${WD_NAMES[wd]} holidays`);
     }
-    toast.success(`Marked ${WD_NAMES[wd]}s within each class's academic year`);
     setBusy(false);
     onDone();
   }
   return (
     <Card className="mx-auto w-full max-w-sm rounded-2xl p-3 space-y-2">
-      <p className="text-xs font-semibold">Mark weekday as non-working</p>
+      <p className="text-xs font-semibold">Weekday holiday · applies only to your classes</p>
+      <div className="flex gap-1 rounded-full bg-secondary p-0.5">
+        {[{v:"mark" as const,l:"Mark holiday"},{v:"unmark" as const,l:"Remove holiday"}].map((o) => (
+          <button key={o.v} onClick={() => setMode(o.v)}
+            className={`flex-1 rounded-full py-1 text-[11px] font-semibold ${mode === o.v ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}>{o.l}</button>
+        ))}
+      </div>
       <div className="flex gap-2">
         <select value={wd} onChange={(e) => setWd(parseInt(e.target.value))} className="flex-1 rounded-md border border-input bg-background px-2 py-1.5 text-xs">
           {WD_NAMES.map((n, i) => <option key={i} value={i}>{n}</option>)}
         </select>
-        <Button size="sm" onClick={apply} disabled={busy}>{busy ? "..." : "Mark"}</Button>
+        <Button size="sm" onClick={apply} disabled={busy}>{busy ? "..." : mode === "mark" ? "Apply" : "Remove"}</Button>
       </div>
     </Card>
   );

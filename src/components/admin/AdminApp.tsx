@@ -17,9 +17,10 @@ import {
 } from "@/components/ui/alert-dialog";
 import {
   Loader2, Search, BarChart3, CalendarDays, AlertTriangle,
-  Settings as SettingsIcon, X, Plus, Check, XCircle, MinusCircle,
+  Settings as SettingsIcon, X, Plus, Check, XCircle, MinusCircle, History,
 } from "lucide-react";
 import { toast } from "sonner";
+import { StudentHistoryDialog } from "@/components/StudentHistoryDialog";
 
 type Tab = "dashboard" | "calendar" | "defaulters" | "settings";
 
@@ -325,6 +326,8 @@ function ClassDetailDialog({ cls, initialDate, onClose }: { cls: SavedClass | nu
   const absent = rows.filter((r) => r.status === "absent").length;
   const unmarked = rows.filter((r) => r.status === "unmarked").length;
 
+  const [historyStudent, setHistoryStudent] = React.useState<StudentRow | null>(null);
+
   return (
     <Dialog open={!!cls} onOpenChange={(o) => { if (!o) onClose(); }}>
       <DialogContent className="max-w-md rounded-2xl max-h-[85vh] overflow-y-auto">
@@ -345,19 +348,35 @@ function ClassDetailDialog({ cls, initialDate, onClose }: { cls: SavedClass | nu
           ) : rows.length === 0 ? (
             <p className="text-center text-xs text-muted-foreground py-6">No students enrolled.</p>
           ) : (
-            <div className="space-y-1.5">
-              {rows.map((r) => (
-                <div key={r.student_id} className="flex items-center justify-between rounded-xl border bg-card px-3 py-2">
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold truncate">{r.name}</p>
-                    <p className="text-[11px] text-muted-foreground truncate">Roll {r.roll || "—"}</p>
-                  </div>
-                  <StatusPill status={r.status} />
-                </div>
-              ))}
-            </div>
+            <>
+              <p className="text-[10px] text-muted-foreground text-center">Tap a student to see their full attendance history</p>
+              <div className="space-y-1.5">
+                {rows.map((r) => (
+                  <button key={r.student_id} onClick={() => setHistoryStudent(r)}
+                    className="flex w-full items-center justify-between rounded-xl border bg-card px-3 py-2 text-left hover:bg-secondary/50 transition">
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold truncate">{r.name}</p>
+                      <p className="text-[11px] text-muted-foreground truncate">Roll {r.roll || "—"}</p>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <StatusPill status={r.status} />
+                      <History className="h-4 w-4 text-muted-foreground" />
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </>
           )}
         </div>
+
+        <StudentHistoryDialog
+          open={!!historyStudent}
+          onClose={() => setHistoryStudent(null)}
+          studentId={historyStudent?.student_id ?? null}
+          classId={cls?.id ?? null}
+          studentName={historyStudent?.name}
+          studentRoll={historyStudent?.roll}
+        />
       </DialogContent>
     </Dialog>
   );
@@ -497,6 +516,7 @@ const ADMIN_WD_NAMES = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Frid
 
 function AdminMarkWeekdayOff({ classIds, classMonths, onDone }: { classIds: string[]; classMonths: Record<string, Set<string>>; onDone: () => void }) {
   const [wd, setWd] = React.useState(0);
+  const [mode, setMode] = React.useState<"mark" | "unmark">("mark");
   const [busy, setBusy] = React.useState(false);
   const MONTH_NAMES = ["January","February","March","April","May","June","July","August","September","October","November","December"];
   async function apply() {
@@ -518,30 +538,47 @@ function AdminMarkWeekdayOff({ classIds, classMonths, onDone }: { classIds: stri
     const dates: string[] = [];
     const d = new Date(start);
     while (d <= end) { if (d.getDay() === wd) { const iso = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; dates.push(iso); } d.setDate(d.getDate() + 1); }
-    // Only insert (class, date) pairs where the class's academic year includes that month
-    const rows = dates.flatMap((date) => {
+    const pairs = dates.flatMap((date) => {
       const mn = MONTH_NAMES[parseInt(date.slice(5, 7), 10) - 1];
       return classIds
         .filter((cid) => classMonths[cid]?.has(mn))
-        .map((cid) => ({ class_id: cid, date, type: "non_working", title: `${ADMIN_WD_NAMES[wd]} holiday` }));
+        .map((cid) => ({ class_id: cid, date }));
     });
-    if (rows.length === 0) { toast.error("No dates fall within any class's academic year"); setBusy(false); return; }
-    for (let i = 0; i < rows.length; i += 500) {
-      const { error } = await supabase.from("calendar_events").upsert(rows.slice(i, i + 500), { onConflict: "class_id,date" });
+    if (pairs.length === 0) { toast.error("No dates fall within any class's academic year"); setBusy(false); return; }
+    if (mode === "mark") {
+      const rows = pairs.map((p) => ({ ...p, type: "non_working", title: `${ADMIN_WD_NAMES[wd]} holiday` }));
+      for (let i = 0; i < rows.length; i += 500) {
+        const { error } = await supabase.from("calendar_events").upsert(rows.slice(i, i + 500), { onConflict: "class_id,date" });
+        if (error) { toast.error(error.message); setBusy(false); return; }
+      }
+      toast.success(`Marked all ${ADMIN_WD_NAMES[wd]}s as non-working`);
+    } else {
+      const classesToClear = Array.from(new Set(pairs.map((p) => p.class_id)));
+      const datesToClear = Array.from(new Set(pairs.map((p) => p.date)));
+      const { error } = await supabase.from("calendar_events").delete()
+        .in("class_id", classesToClear)
+        .in("date", datesToClear)
+        .in("type", ["non_working", "student_holiday"]);
       if (error) { toast.error(error.message); setBusy(false); return; }
+      toast.success(`Cleared ${ADMIN_WD_NAMES[wd]} holidays`);
     }
-    toast.success(`Marked ${ADMIN_WD_NAMES[wd]}s within each class's academic year`);
     setBusy(false);
     onDone();
   }
   return (
     <Card className="mx-auto w-full max-w-sm rounded-2xl p-3 space-y-2">
-      <p className="text-xs font-semibold">Mark weekday as non-working</p>
+      <p className="text-xs font-semibold">Weekday holiday · applies only to your saved classes</p>
+      <div className="flex gap-1 rounded-full bg-secondary p-0.5">
+        {[{v:"mark" as const,l:"Mark holiday"},{v:"unmark" as const,l:"Remove holiday"}].map((o) => (
+          <button key={o.v} onClick={() => setMode(o.v)}
+            className={`flex-1 rounded-full py-1 text-[11px] font-semibold ${mode === o.v ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}>{o.l}</button>
+        ))}
+      </div>
       <div className="flex gap-2">
         <select value={wd} onChange={(e) => setWd(parseInt(e.target.value))} className="flex-1 rounded-md border border-input bg-background px-2 py-1.5 text-xs">
           {ADMIN_WD_NAMES.map((n, i) => <option key={i} value={i}>{n}</option>)}
         </select>
-        <Button size="sm" onClick={apply} disabled={busy}>{busy ? "..." : "Mark"}</Button>
+        <Button size="sm" onClick={apply} disabled={busy}>{busy ? "..." : mode === "mark" ? "Apply" : "Remove"}</Button>
       </div>
     </Card>
   );

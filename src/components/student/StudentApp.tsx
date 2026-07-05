@@ -48,7 +48,11 @@ export function StudentApp() {
   );
 }
 
-interface ClassInfo { id: string; name: string; teacher_name: string; present: number; absent: number; total: number; pct: number; }
+interface ClassInfo {
+  id: string; name: string; teacher_name: string; class_code: string;
+  present: number; absent: number; total: number; pct: number;
+  streak: number; last_marked: string | null; last_status: "present" | "absent" | null;
+}
 
 function useStudentClasses() {
   const { user } = useAuth();
@@ -58,7 +62,7 @@ function useStudentClasses() {
   const load = React.useCallback(async () => {
     setLoading(true);
     const { data: enrolls } = await supabase.from("class_enrollments")
-      .select("class_id, classes(id, name, teacher_id)")
+      .select("class_id, classes(id, name, teacher_id, class_code)")
       .eq("student_id", user!.id);
     const classIds = (enrolls as any[] ?? []).map((e) => e.class_id);
     if (classIds.length === 0) { setClasses([]); setLoading(false); return; }
@@ -68,7 +72,6 @@ function useStudentClasses() {
       supabase.from("profiles").select("id, full_name, user_id_text").in("id", (enrolls as any[]).map((e) => e.classes?.teacher_id).filter(Boolean)),
     ]);
     const teacherMap = new Map((teacherProfiles as any[] ?? []).map((p) => [p.id, p.full_name || p.user_id_text]));
-    // Working days = dates teacher marked attendance, MINUS non_working / college_event
     const nonWorkingByClass: Record<string, Set<string>> = {};
     (events as any[] ?? []).forEach((e) => {
       if (e.type === "non_working" || e.type === "student_holiday" || e.type === "holiday" || e.type === "college_event") {
@@ -81,14 +84,23 @@ function useStudentClasses() {
       (workingByClass[a.class_id] ||= new Set()).add(a.date);
     });
     const result: ClassInfo[] = (enrolls as any[]).map((e) => {
-      const cAtt = (att as any[] ?? []).filter((a) => a.class_id === e.class_id);
-      const present = cAtt.filter((a) => a.status === "present" && !nonWorkingByClass[e.class_id]?.has(a.date)).length;
+      const cAtt = (att as any[] ?? []).filter((a) => a.class_id === e.class_id && !nonWorkingByClass[e.class_id]?.has(a.date));
+      const present = cAtt.filter((a) => a.status === "present").length;
       const total = workingByClass[e.class_id]?.size ?? 0;
+      const sorted = [...cAtt].sort((a, b) => (a.date < b.date ? 1 : -1));
+      // Streak: consecutive present days from most recent backwards
+      let streak = 0;
+      for (const a of sorted) { if (a.status === "present") streak++; else break; }
+      const last = sorted[0];
       return {
         id: e.class_id, name: e.classes?.name ?? "Class",
         teacher_name: teacherMap.get(e.classes?.teacher_id) ?? "—",
+        class_code: e.classes?.class_code ?? "",
         present, absent: Math.max(0, total - present), total,
         pct: total === 0 ? 0 : Math.round((present / total) * 100),
+        streak,
+        last_marked: last?.date ?? null,
+        last_status: (last?.status as any) ?? null,
       };
     });
     setClasses(result);
@@ -178,22 +190,61 @@ function DashboardTab() {
 
 function ClassRow({ c }: { c: ClassInfo }) {
   const color = c.pct >= 85 ? "#1DB954" : c.pct >= 75 ? "oklch(0.70 0.16 85)" : "#E74C3C";
+  // How many more consecutive absences can they afford while staying ≥75%,
+  // or how many consecutive presents they need to climb back to 75%.
+  let advice = "No classes recorded yet";
+  if (c.total > 0) {
+    if (c.pct >= 75) {
+      // (present) / (total + x) >= 0.75  →  x <= present/0.75 - total
+      const canSkip = Math.max(0, Math.floor(c.present / 0.75) - c.total);
+      advice = canSkip > 0
+        ? `You can skip up to ${canSkip} more ${canSkip === 1 ? "class" : "classes"} and stay ≥75%`
+        : "One more absence drops you below 75%";
+    } else {
+      // (present + x) / (total + x) >= 0.75  →  x >= (0.75·total − present)/0.25
+      const need = Math.ceil((0.75 * c.total - c.present) / 0.25);
+      advice = `Attend the next ${need} ${need === 1 ? "class" : "classes"} to reach 75%`;
+    }
+  }
+  const lastLabel = c.last_marked
+    ? `Last: ${new Date(c.last_marked).toLocaleDateString("en", { day: "numeric", month: "short" })} · ${c.last_status === "present" ? "Present" : "Absent"}`
+    : "No attendance yet";
   return (
     <Card className="rounded-2xl p-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="font-bold">{c.name}</p>
-          <p className="text-xs text-muted-foreground">{c.teacher_name}</p>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <p className="font-bold truncate">{c.name}</p>
+          <p className="text-xs text-muted-foreground truncate">{c.teacher_name}{c.class_code ? ` · ${c.class_code}` : ""}</p>
         </div>
-        <div className="text-right">
-          <p className="text-2xl font-bold" style={{ color }}>{c.pct}%</p>
-          <p className="text-[11px] text-muted-foreground">{c.present}/{c.total}</p>
+        <div className="text-right shrink-0">
+          <p className="text-2xl font-bold leading-none" style={{ color }}>{c.pct}%</p>
+          <p className="text-[11px] text-muted-foreground mt-1">{c.present}/{c.total}</p>
         </div>
       </div>
       <div className="mt-3 h-2 overflow-hidden rounded-full bg-secondary">
         <div className="h-full rounded-full transition-all" style={{ width: `${c.pct}%`, background: color }} />
       </div>
+      <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+        <MiniStat label="Present" value={c.present} tone="success" />
+        <MiniStat label="Absent" value={c.absent} tone="danger" />
+        <MiniStat label="Streak" value={c.streak} tone={c.streak > 0 ? "success" : "neutral"} />
+      </div>
+      <div className="mt-3 rounded-xl bg-secondary/60 px-3 py-2">
+        <p className="text-[11px] text-muted-foreground">{lastLabel}</p>
+        <p className="text-[11px] font-semibold mt-0.5" style={{ color }}>{advice}</p>
+      </div>
     </Card>
+  );
+}
+
+function MiniStat({ label, value, tone }: { label: string; value: number; tone: "success" | "danger" | "neutral" }) {
+  const bg = tone === "success" ? "#1DB954" : tone === "danger" ? "#E74C3C" : undefined;
+  const style: React.CSSProperties = bg ? { background: bg, color: "white" } : {};
+  return (
+    <div className={`rounded-lg p-2 ${bg ? "" : "bg-secondary text-foreground"}`} style={style}>
+      <p className="text-sm font-bold leading-none">{value}</p>
+      <p className="text-[10px] mt-1 opacity-90">{label}</p>
+    </div>
   );
 }
 
