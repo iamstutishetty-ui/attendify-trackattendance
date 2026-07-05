@@ -48,7 +48,11 @@ export function StudentApp() {
   );
 }
 
-interface ClassInfo { id: string; name: string; teacher_name: string; present: number; absent: number; total: number; pct: number; }
+interface ClassInfo {
+  id: string; name: string; teacher_name: string; class_code: string;
+  present: number; absent: number; total: number; pct: number;
+  streak: number; last_marked: string | null; last_status: "present" | "absent" | null;
+}
 
 function useStudentClasses() {
   const { user } = useAuth();
