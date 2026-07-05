@@ -62,7 +62,7 @@ function useStudentClasses() {
   const load = React.useCallback(async () => {
     setLoading(true);
     const { data: enrolls } = await supabase.from("class_enrollments")
-      .select("class_id, classes(id, name, teacher_id)")
+      .select("class_id, classes(id, name, teacher_id, class_code)")
       .eq("student_id", user!.id);
     const classIds = (enrolls as any[] ?? []).map((e) => e.class_id);
     if (classIds.length === 0) { setClasses([]); setLoading(false); return; }
@@ -72,7 +72,6 @@ function useStudentClasses() {
       supabase.from("profiles").select("id, full_name, user_id_text").in("id", (enrolls as any[]).map((e) => e.classes?.teacher_id).filter(Boolean)),
     ]);
     const teacherMap = new Map((teacherProfiles as any[] ?? []).map((p) => [p.id, p.full_name || p.user_id_text]));
-    // Working days = dates teacher marked attendance, MINUS non_working / college_event
     const nonWorkingByClass: Record<string, Set<string>> = {};
     (events as any[] ?? []).forEach((e) => {
       if (e.type === "non_working" || e.type === "student_holiday" || e.type === "holiday" || e.type === "college_event") {
@@ -85,14 +84,23 @@ function useStudentClasses() {
       (workingByClass[a.class_id] ||= new Set()).add(a.date);
     });
     const result: ClassInfo[] = (enrolls as any[]).map((e) => {
-      const cAtt = (att as any[] ?? []).filter((a) => a.class_id === e.class_id);
-      const present = cAtt.filter((a) => a.status === "present" && !nonWorkingByClass[e.class_id]?.has(a.date)).length;
+      const cAtt = (att as any[] ?? []).filter((a) => a.class_id === e.class_id && !nonWorkingByClass[e.class_id]?.has(a.date));
+      const present = cAtt.filter((a) => a.status === "present").length;
       const total = workingByClass[e.class_id]?.size ?? 0;
+      const sorted = [...cAtt].sort((a, b) => (a.date < b.date ? 1 : -1));
+      // Streak: consecutive present days from most recent backwards
+      let streak = 0;
+      for (const a of sorted) { if (a.status === "present") streak++; else break; }
+      const last = sorted[0];
       return {
         id: e.class_id, name: e.classes?.name ?? "Class",
         teacher_name: teacherMap.get(e.classes?.teacher_id) ?? "—",
+        class_code: e.classes?.class_code ?? "",
         present, absent: Math.max(0, total - present), total,
         pct: total === 0 ? 0 : Math.round((present / total) * 100),
+        streak,
+        last_marked: last?.date ?? null,
+        last_status: (last?.status as any) ?? null,
       };
     });
     setClasses(result);
