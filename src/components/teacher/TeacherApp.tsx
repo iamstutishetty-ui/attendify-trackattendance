@@ -565,31 +565,107 @@ function AttendanceTab() {
     // Optimistic UI
     setStatuses((p) => ({ ...p, [id]: next }));
     const iso = toISODate(date);
+    await persistOne(activeClass, id, iso, next, cur);
+  }
+
+  async function persistOne(
+    class_id: string,
+    student_id: string,
+    iso: string,
+    next: "present" | "absent" | undefined,
+    cur: "present" | "absent" | undefined,
+  ) {
+    const online = isOnline();
     try {
+      if (!online) {
+        if (next === undefined) queueOffline({ kind: "delete", class_id, student_id, date: iso, ts: Date.now() });
+        else queueOffline({ kind: "upsert", class_id, student_id, date: iso, status: next, marked_by: user!.id, ts: Date.now() });
+        setPendingCount(queuedCount());
+        return;
+      }
       if (next === undefined) {
         const { error } = await supabase.from("attendance_records").delete()
-          .eq("class_id", activeClass).eq("student_id", id).eq("date", iso);
+          .eq("class_id", class_id).eq("student_id", student_id).eq("date", iso);
         if (error) throw error;
       } else {
         const { error } = await supabase.from("attendance_records").upsert(
-          { class_id: activeClass, student_id: id, date: iso, status: next, marked_by: user!.id },
+          { class_id, student_id, date: iso, status: next, marked_by: user!.id },
           { onConflict: "class_id,student_id,date" },
         );
         if (error) throw error;
         if (next === "present" && calendarEvents[iso] !== "working") {
           await supabase.from("calendar_events").upsert(
-            { class_id: activeClass, date: iso, type: "working", title: "Working day" },
+            { class_id, date: iso, type: "working", title: "Working day" },
             { onConflict: "class_id,date" },
           );
           setCalendarEvents((p) => ({ ...p, [iso]: "working" }));
         }
       }
     } catch (e: any) {
-      // Revert on failure
-      setStatuses((p) => ({ ...p, [id]: cur }));
-      toast.error(e.message || "Could not save");
+      // Fallback: queue for later sync
+      if (next === undefined) queueOffline({ kind: "delete", class_id, student_id, date: iso, ts: Date.now() });
+      else queueOffline({ kind: "upsert", class_id, student_id, date: iso, status: next, marked_by: user!.id, ts: Date.now() });
+      setPendingCount(queuedCount());
+      setStatuses((p) => ({ ...p, [student_id]: cur }));
+      toast.error("Saved offline — will sync when back online");
     }
   }
+
+  async function markAll(target: "present" | "absent") {
+    if (!activeClass || students.length === 0) return;
+    const iso = toISODate(date);
+    // Optimistic UI
+    setStatuses((p) => { const n = { ...p }; students.forEach((s) => { n[s.id] = target; }); return n; });
+    if (!isOnline()) {
+      students.forEach((s) =>
+        queueOffline({ kind: "upsert", class_id: activeClass, student_id: s.id, date: iso, status: target, marked_by: user!.id, ts: Date.now() }),
+      );
+      setPendingCount(queuedCount());
+      toast.success(`All marked ${target} (offline — will sync)`);
+      return;
+    }
+    const rows = students.map((s) => ({ class_id: activeClass, student_id: s.id, date: iso, status: target, marked_by: user!.id }));
+    const { error } = await supabase.from("attendance_records").upsert(rows, { onConflict: "class_id,student_id,date" });
+    if (error) { toast.error(error.message); return; }
+    if (target === "present" && calendarEvents[iso] !== "working") {
+      await supabase.from("calendar_events").upsert(
+        { class_id: activeClass, date: iso, type: "working", title: "Working day" },
+        { onConflict: "class_id,date" },
+      );
+      setCalendarEvents((p) => ({ ...p, [iso]: "working" }));
+    }
+    toast.success(`All ${students.length} marked ${target}`);
+  }
+
+  // Offline sync management
+  const [pendingCount, setPendingCount] = React.useState(0);
+  const [syncing, setSyncing] = React.useState(false);
+  const [online, setOnline] = React.useState(() => isOnline());
+  React.useEffect(() => {
+    setPendingCount(queuedCount());
+    const onOnline = async () => {
+      setOnline(true);
+      if (queuedCount() > 0) {
+        setSyncing(true);
+        const r = await flushOffline();
+        setSyncing(false);
+        setPendingCount(queuedCount());
+        if (r.ok > 0) toast.success(`Synced ${r.ok} offline change${r.ok === 1 ? "" : "s"}`);
+        loadData();
+      }
+    };
+    const onOffline = () => setOnline(false);
+    window.addEventListener("online", onOnline);
+    window.addEventListener("offline", onOffline);
+    // Try flushing on mount too
+    if (isOnline() && queuedCount() > 0) onOnline();
+    return () => {
+      window.removeEventListener("online", onOnline);
+      window.removeEventListener("offline", onOffline);
+    };
+  }, [loadData]);
+
+  const [historyStudent, setHistoryStudent] = React.useState<{ id: string; name: string; roll: string } | null>(null);
 
   async function downloadPdf() {
     if (!activeClass || !activeRow) return;
