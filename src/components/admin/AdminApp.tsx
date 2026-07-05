@@ -17,9 +17,10 @@ import {
 } from "@/components/ui/alert-dialog";
 import {
   Loader2, Search, BarChart3, CalendarDays, AlertTriangle,
-  Settings as SettingsIcon, X, Plus, Check, XCircle, MinusCircle,
+  Settings as SettingsIcon, X, Plus, Check, XCircle, MinusCircle, History,
 } from "lucide-react";
 import { toast } from "sonner";
+import { StudentHistoryDialog } from "@/components/StudentHistoryDialog";
 
 type Tab = "dashboard" | "calendar" | "defaulters" | "settings";
 
