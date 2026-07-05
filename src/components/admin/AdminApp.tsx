@@ -378,7 +378,10 @@ function CalendarTab() {
   const [busy, setBusy] = React.useState(false);
 
   const loadAll = React.useCallback(async () => {
-    const { data: cls } = await supabase.from("classes").select("id, months, months_secondary");
+    const { data: saved } = await (supabase as any).from("admin_saved_classes").select("class_id");
+    const savedIds = ((saved as any[]) ?? []).map((r) => r.class_id);
+    if (savedIds.length === 0) { setClassMonths({}); setAllClassIds([]); setEvents({}); return; }
+    const { data: cls } = await supabase.from("classes").select("id, months, months_secondary").in("id", savedIds);
     const rows = (cls as any[] ?? []);
     const ids = rows.map((c) => c.id);
     const cm: Record<string, Set<string>> = {};
