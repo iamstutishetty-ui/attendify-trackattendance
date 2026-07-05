@@ -239,8 +239,9 @@ function ClassRow({ c }: { c: ClassInfo }) {
 
 function MiniStat({ label, value, tone }: { label: string; value: number; tone: "success" | "danger" | "neutral" }) {
   const bg = tone === "success" ? "#1DB954" : tone === "danger" ? "#E74C3C" : undefined;
+  const style: React.CSSProperties = bg ? { background: bg, color: "white" } : {};
   return (
-    <div className="rounded-lg p-2" style={bg ? { background: bg, color: "white" } : { background: "hsl(var(--secondary))" }}>
+    <div className={`rounded-lg p-2 ${bg ? "" : "bg-secondary text-foreground"}`} style={style}>
       <p className="text-sm font-bold leading-none">{value}</p>
       <p className="text-[10px] mt-1 opacity-90">{label}</p>
     </div>
