@@ -326,6 +326,8 @@ function ClassDetailDialog({ cls, initialDate, onClose }: { cls: SavedClass | nu
   const absent = rows.filter((r) => r.status === "absent").length;
   const unmarked = rows.filter((r) => r.status === "unmarked").length;
 
+  const [historyStudent, setHistoryStudent] = React.useState<StudentRow | null>(null);
+
   return (
     <Dialog open={!!cls} onOpenChange={(o) => { if (!o) onClose(); }}>
       <DialogContent className="max-w-md rounded-2xl max-h-[85vh] overflow-y-auto">
@@ -346,19 +348,35 @@ function ClassDetailDialog({ cls, initialDate, onClose }: { cls: SavedClass | nu
           ) : rows.length === 0 ? (
             <p className="text-center text-xs text-muted-foreground py-6">No students enrolled.</p>
           ) : (
-            <div className="space-y-1.5">
-              {rows.map((r) => (
-                <div key={r.student_id} className="flex items-center justify-between rounded-xl border bg-card px-3 py-2">
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold truncate">{r.name}</p>
-                    <p className="text-[11px] text-muted-foreground truncate">Roll {r.roll || "—"}</p>
-                  </div>
-                  <StatusPill status={r.status} />
-                </div>
-              ))}
-            </div>
+            <>
+              <p className="text-[10px] text-muted-foreground text-center">Tap a student to see their full attendance history</p>
+              <div className="space-y-1.5">
+                {rows.map((r) => (
+                  <button key={r.student_id} onClick={() => setHistoryStudent(r)}
+                    className="flex w-full items-center justify-between rounded-xl border bg-card px-3 py-2 text-left hover:bg-secondary/50 transition">
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold truncate">{r.name}</p>
+                      <p className="text-[11px] text-muted-foreground truncate">Roll {r.roll || "—"}</p>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <StatusPill status={r.status} />
+                      <History className="h-4 w-4 text-muted-foreground" />
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </>
           )}
         </div>
+
+        <StudentHistoryDialog
+          open={!!historyStudent}
+          onClose={() => setHistoryStudent(null)}
+          studentId={historyStudent?.student_id ?? null}
+          classId={cls?.id ?? null}
+          studentName={historyStudent?.name}
+          studentRoll={historyStudent?.roll}
+        />
       </DialogContent>
     </Dialog>
   );
