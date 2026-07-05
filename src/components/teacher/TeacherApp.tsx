@@ -23,10 +23,13 @@ import {
 import {
   Layers, ClipboardCheck, CalendarDays, AlertTriangle, User as UserIcon, Plus,
   Copy, Search, Loader2, Check, X, ArrowUpRight, Pencil, Trash2, Download,
+  CheckCheck, XSquare, History, WifiOff, CloudUpload,
 } from "lucide-react";
 import { toast } from "sonner";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import { enqueue as queueOffline, flush as flushOffline, queuedCount, isOnline } from "@/lib/attendance-offline";
+import { StudentHistoryDialog } from "@/components/StudentHistoryDialog";
 
 type Tab = "classes" | "attendance" | "calendar" | "defaulters" | "profile";
 type AttendanceMode = "whole_year" | "two_semester";
