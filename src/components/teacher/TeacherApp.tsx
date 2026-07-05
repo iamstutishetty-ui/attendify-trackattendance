@@ -770,6 +770,30 @@ function AttendanceTab() {
 
       <WeeklyStrip date={date} onChange={setDate} events={calendarEvents} />
 
+      {(!online || pendingCount > 0) && (
+        <Card className={`rounded-2xl p-3 flex items-center gap-2 ${online ? "bg-amber-500/10 border-amber-500/30" : "bg-destructive/10 border-destructive/30"}`}>
+          {online ? <CloudUpload className="h-4 w-4 text-amber-600" /> : <WifiOff className="h-4 w-4 text-destructive" />}
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-semibold">
+              {online
+                ? (syncing ? "Syncing offline changes…" : `${pendingCount} change${pendingCount === 1 ? "" : "s"} pending sync`)
+                : `Offline — ${pendingCount} change${pendingCount === 1 ? "" : "s"} saved locally`}
+            </p>
+            <p className="text-[10px] text-muted-foreground">Marks are saved on this device and will sync automatically.</p>
+          </div>
+          {online && pendingCount > 0 && !syncing && (
+            <Button size="sm" variant="outline" onClick={async () => {
+              setSyncing(true);
+              const r = await flushOffline();
+              setSyncing(false);
+              setPendingCount(queuedCount());
+              if (r.ok > 0) toast.success(`Synced ${r.ok}`);
+              loadData();
+            }}>Sync now</Button>
+          )}
+        </Card>
+      )}
+
       <div className="grid grid-cols-2 gap-2">
         <Card className="rounded-2xl p-3 text-white" style={{ background: "#1DB954" }}>
           <p className="text-xs opacity-90">Present</p><p className="text-2xl font-bold">{presentCount}</p>
@@ -778,6 +802,17 @@ function AttendanceTab() {
           <p className="text-xs opacity-90">Absent</p><p className="text-2xl font-bold">{absentCount}</p>
         </Card>
       </div>
+
+      {students.length > 0 && (
+        <div className="grid grid-cols-2 gap-2">
+          <Button onClick={() => markAll("present")} className="h-11 rounded-xl text-white" style={{ background: "#1DB954" }}>
+            <CheckCheck className="mr-2 h-4 w-4" />Mark all present
+          </Button>
+          <Button onClick={() => markAll("absent")} className="h-11 rounded-xl text-white" style={{ background: "#E74C3C" }}>
+            <X className="mr-2 h-4 w-4" />Mark all absent
+          </Button>
+        </div>
+      )}
 
       <Button onClick={downloadPdf} disabled={downloading} variant="outline" className="h-11 w-full rounded-xl">
         {downloading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
@@ -808,18 +843,35 @@ function AttendanceTab() {
             const badgeStyle = st === "present" ? { background: "#1DB954" }
               : st === "absent" ? { background: "#E74C3C" } : undefined;
             return (
-              <button key={s.id} onClick={() => toggle(s.id)}
-                className={`flex w-full items-center gap-3 rounded-2xl border p-3 text-left transition ${tone}`}>
-                <span className="font-mono text-xs font-semibold text-muted-foreground w-16 shrink-0">{s.roll}</span>
-                <span className="flex-1 text-sm font-semibold">{s.name}</span>
-                <span style={badgeStyle} className={`grid h-9 w-9 place-items-center rounded-full ${badge}`}>
-                  {st === "present" ? <Check className="h-5 w-5" /> : st === "absent" ? <X className="h-5 w-5" /> : <span className="text-xs">—</span>}
-                </span>
-              </button>
+              <div key={s.id} className={`flex items-center gap-2 rounded-2xl border p-3 transition ${tone}`}>
+                <button onClick={() => toggle(s.id)} className="flex flex-1 items-center gap-3 text-left min-w-0">
+                  <span className="font-mono text-xs font-semibold text-muted-foreground w-16 shrink-0">{s.roll}</span>
+                  <span className="flex-1 text-sm font-semibold truncate">{s.name}</span>
+                  <span style={badgeStyle} className={`grid h-9 w-9 place-items-center rounded-full ${badge}`}>
+                    {st === "present" ? <Check className="h-5 w-5" /> : st === "absent" ? <X className="h-5 w-5" /> : <span className="text-xs">—</span>}
+                  </span>
+                </button>
+                <button
+                  onClick={() => setHistoryStudent(s)}
+                  aria-label="View attendance history"
+                  className="grid h-9 w-9 place-items-center rounded-full bg-secondary text-muted-foreground hover:bg-secondary/80 shrink-0"
+                >
+                  <History className="h-4 w-4" />
+                </button>
+              </div>
             );
           })}
         </div>
       )}
+
+      <StudentHistoryDialog
+        open={!!historyStudent}
+        onClose={() => setHistoryStudent(null)}
+        studentId={historyStudent?.id ?? null}
+        classId={activeClass || null}
+        studentName={historyStudent?.name}
+        studentRoll={historyStudent?.roll}
+      />
     </section>
   );
 }
