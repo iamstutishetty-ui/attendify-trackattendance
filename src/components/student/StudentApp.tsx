@@ -190,22 +190,60 @@ function DashboardTab() {
 
 function ClassRow({ c }: { c: ClassInfo }) {
   const color = c.pct >= 85 ? "#1DB954" : c.pct >= 75 ? "oklch(0.70 0.16 85)" : "#E74C3C";
+  // How many more consecutive absences can they afford while staying ≥75%,
+  // or how many consecutive presents they need to climb back to 75%.
+  let advice = "No classes recorded yet";
+  if (c.total > 0) {
+    if (c.pct >= 75) {
+      // (present) / (total + x) >= 0.75  →  x <= present/0.75 - total
+      const canSkip = Math.max(0, Math.floor(c.present / 0.75) - c.total);
+      advice = canSkip > 0
+        ? `You can skip up to ${canSkip} more ${canSkip === 1 ? "class" : "classes"} and stay ≥75%`
+        : "One more absence drops you below 75%";
+    } else {
+      // (present + x) / (total + x) >= 0.75  →  x >= (0.75·total − present)/0.25
+      const need = Math.ceil((0.75 * c.total - c.present) / 0.25);
+      advice = `Attend the next ${need} ${need === 1 ? "class" : "classes"} to reach 75%`;
+    }
+  }
+  const lastLabel = c.last_marked
+    ? `Last: ${new Date(c.last_marked).toLocaleDateString("en", { day: "numeric", month: "short" })} · ${c.last_status === "present" ? "Present" : "Absent"}`
+    : "No attendance yet";
   return (
     <Card className="rounded-2xl p-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="font-bold">{c.name}</p>
-          <p className="text-xs text-muted-foreground">{c.teacher_name}</p>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <p className="font-bold truncate">{c.name}</p>
+          <p className="text-xs text-muted-foreground truncate">{c.teacher_name}{c.class_code ? ` · ${c.class_code}` : ""}</p>
         </div>
-        <div className="text-right">
-          <p className="text-2xl font-bold" style={{ color }}>{c.pct}%</p>
-          <p className="text-[11px] text-muted-foreground">{c.present}/{c.total}</p>
+        <div className="text-right shrink-0">
+          <p className="text-2xl font-bold leading-none" style={{ color }}>{c.pct}%</p>
+          <p className="text-[11px] text-muted-foreground mt-1">{c.present}/{c.total}</p>
         </div>
       </div>
       <div className="mt-3 h-2 overflow-hidden rounded-full bg-secondary">
         <div className="h-full rounded-full transition-all" style={{ width: `${c.pct}%`, background: color }} />
       </div>
+      <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+        <MiniStat label="Present" value={c.present} tone="success" />
+        <MiniStat label="Absent" value={c.absent} tone="danger" />
+        <MiniStat label="Streak" value={c.streak} tone={c.streak > 0 ? "success" : "neutral"} />
+      </div>
+      <div className="mt-3 rounded-xl bg-secondary/60 px-3 py-2">
+        <p className="text-[11px] text-muted-foreground">{lastLabel}</p>
+        <p className="text-[11px] font-semibold mt-0.5" style={{ color }}>{advice}</p>
+      </div>
     </Card>
+  );
+}
+
+function MiniStat({ label, value, tone }: { label: string; value: number; tone: "success" | "danger" | "neutral" }) {
+  const bg = tone === "success" ? "#1DB954" : tone === "danger" ? "#E74C3C" : undefined;
+  return (
+    <div className="rounded-lg p-2" style={bg ? { background: bg, color: "white" } : { background: "hsl(var(--secondary))" }}>
+      <p className="text-sm font-bold leading-none">{value}</p>
+      <p className="text-[10px] mt-1 opacity-90">{label}</p>
+    </div>
   );
 }
 
