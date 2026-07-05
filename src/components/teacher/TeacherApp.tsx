@@ -750,9 +750,9 @@ function CalendarTab() {
   const { user } = useAuth();
   const [classIds, setClassIds] = React.useState<string[]>([]);
   const [classMonths, setClassMonths] = React.useState<Record<string, Set<string>>>({});
-  const [events, setEvents] = React.useState<{ date: string; type: string }[]>([]);
+  const [events, setEvents] = React.useState<Record<string, string>>({}); // date -> type
   const [month, setMonth] = React.useState(() => { const d = new Date(); d.setDate(1); return d; });
-  const clickTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [busy, setBusy] = React.useState(false);
 
   const load = React.useCallback(async () => {
     const { data: cls } = await supabase.from("classes").select("id, months, months_secondary").eq("teacher_id", user!.id);
@@ -762,11 +762,16 @@ function CalendarTab() {
     rows.forEach((c) => { cm[c.id] = new Set<string>([...(c.months ?? []), ...(c.months_secondary ?? [])]); });
     setClassMonths(cm);
     setClassIds(ids);
-    if (ids.length === 0) { setEvents([]); return; }
-    const { data } = await supabase.from("calendar_events").select("date, type").in("class_id", ids).order("date");
-    const seen = new Map<string, { date: string; type: string }>();
-    (data as any[] ?? []).forEach((e) => { if (!seen.has(e.date)) seen.set(e.date, e); });
-    setEvents([...seen.values()]);
+    if (ids.length === 0) { setEvents({}); return; }
+    const { data } = await supabase.from("calendar_events").select("date, type, class_id").in("class_id", ids);
+    const priority: Record<string, number> = { working: 1, non_working: 2, student_holiday: 2, college_event: 3 };
+    const out: Record<string, string> = {};
+    (data as any[] ?? []).forEach((e) => {
+      const t = e.type === "student_holiday" ? "non_working" : e.type;
+      const cur = out[e.date];
+      if (!cur || (priority[t] ?? 0) > (priority[cur] ?? 0)) out[e.date] = t;
+    });
+    setEvents(out);
   }, [user]);
   React.useEffect(() => { load(); }, [load]);
 
@@ -790,78 +795,60 @@ function CalendarTab() {
     return classIds.filter((id) => classMonths[id]?.has(mn));
   }
 
-  async function markDate(date: string, type: "working" | "student_holiday") {
+  async function cycleDate(iso: string) {
     if (classIds.length === 0) { toast.error("Create a class first"); return; }
-    const targets = classIdsForDate(date);
+    const targets = classIdsForDate(iso);
     if (targets.length === 0) { toast.error("Outside academic year for all your classes"); return; }
-    const rows = targets.map((cid) => ({
-      class_id: cid, date, type,
-      title: type === "working" ? "Working day" : "Non-working day",
-    }));
-    const { error } = await supabase.from("calendar_events").upsert(rows, { onConflict: "class_id,date" });
-    if (error) toast.error(error.message);
-    else { toast.success(type === "working" ? "Marked working" : "Marked non-working"); load(); }
-  }
-  async function clearDate(date: string) {
-    const targets = classIdsForDate(date);
-    if (targets.length === 0) return;
-    const { error } = await supabase.from("calendar_events").delete().in("class_id", targets).eq("date", date);
-    if (error) toast.error(error.message);
-    else { toast.success("Cleared"); load(); }
-  }
-  function handleDateClick(date: string) {
-    if (clickTimer.current) clearTimeout(clickTimer.current);
-    clickTimer.current = setTimeout(() => markDate(date, "working"), 220);
-  }
-  function handleDateDoubleClick(date: string) {
-    if (clickTimer.current) clearTimeout(clickTimer.current);
-    markDate(date, "student_holiday");
+    const cur = events[iso];
+    const next: "working" | "non_working" | "college_event" | null =
+      !cur ? "working" :
+      cur === "working" ? "non_working" :
+      cur === "non_working" ? "college_event" :
+      null;
+    setBusy(true);
+    if (next === null) {
+      await supabase.from("calendar_events").delete().in("class_id", targets).eq("date", iso);
+    } else {
+      const title = next === "working" ? "Working day" : next === "non_working" ? "Non-working" : "College event";
+      const rows = targets.map((cid) => ({ class_id: cid, date: iso, type: next, title }));
+      await supabase.from("calendar_events").upsert(rows, { onConflict: "class_id,date" });
+    }
+    setBusy(false);
+    load();
   }
 
   if (classIds.length === 0) return <EmptyState icon={CalendarDays} title="No classes" text="Create a class first." />;
 
-  const eventMap = Object.fromEntries(events.map((e) => [e.date, e]));
   const days = monthCells(month);
-  const colorOf = (t: string) =>
-    t === "working" ? "text-white font-bold" :
-    t === "non_working" ? "text-white font-bold" :
-    t === "student_holiday" ? "text-white font-bold" :
-    t === "college_event" ? "text-white font-bold" :
-    "bg-muted text-muted-foreground font-bold";
+  const colorOf = (t: string | undefined) =>
+    t === "working" || t === "non_working" || t === "college_event" ? "text-white font-bold" :
+    "bg-secondary text-foreground/70 font-bold";
 
   return (
     <section className="space-y-4">
-      <p className="text-xs text-muted-foreground text-center">Marks apply within each class's academic year</p>
+      <p className="text-xs text-muted-foreground text-center">Applies within each class's academic year · dates outside are disabled</p>
       <Card className="mx-auto w-full max-w-sm rounded-2xl p-3">
         <div className="flex items-center justify-between">
           <button onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))} className="rounded-full bg-secondary px-2.5 py-0.5 text-xs">‹</button>
           <p className="text-sm font-bold">{month.toLocaleDateString("en", { month: "long", year: "numeric" })}</p>
           <button onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))} className="rounded-full bg-secondary px-2.5 py-0.5 text-xs">›</button>
         </div>
-        <p className="mt-1 text-center text-[10px] text-muted-foreground">Tap = working · Double-tap = non-working · Long-press to clear</p>
+        <p className="mt-1 text-center text-[10px] text-muted-foreground">Tap to cycle: Working → Non-working → College event → Clear</p>
         <div className="mt-2 grid grid-cols-7 gap-0.5 text-center text-[9px] text-muted-foreground">
           {["S","M","T","W","T","F","S"].map((d, i) => <div key={i}>{d}</div>)}
         </div>
         <div className="mt-0.5 grid grid-cols-7 gap-0.5">
           {days.map((cell, i) => {
             if (!cell) return <div key={i} />;
-            const event = eventMap[cell.iso];
             const inRange = allowedMonths.has(monthNameOfIso(cell.iso));
-            if (!inRange) {
-              return <div key={cell.iso} className="grid aspect-square place-items-center rounded-lg bg-muted/40 text-[11px] font-semibold text-muted-foreground/40">{cell.d}</div>;
-            }
-            const pressTimer: { t: ReturnType<typeof setTimeout> | null } = { t: null };
+            const disabled = busy || !inRange;
+            const t = events[cell.iso];
             return (
-              <button
-                key={cell.iso}
-                onPointerDown={() => { pressTimer.t = setTimeout(() => { if (clickTimer.current) clearTimeout(clickTimer.current); clearDate(cell.iso); }, 600); }}
-                onPointerUp={() => { if (pressTimer.t) { clearTimeout(pressTimer.t); pressTimer.t = null; } }}
-                onPointerLeave={() => { if (pressTimer.t) { clearTimeout(pressTimer.t); pressTimer.t = null; } }}
-                onClick={() => handleDateClick(cell.iso)}
-                onDoubleClick={() => handleDateDoubleClick(cell.iso)}
-                className={`aspect-square rounded-lg text-[11px] font-semibold transition ${event ? colorOf(event.type) : "bg-secondary text-foreground/70 font-bold"}`}
-                style={event?.type === "working" ? {background:"#80b946"} : event?.type === "non_working" || event?.type === "student_holiday" ? {background:"#e05c5c"} : event?.type === "college_event" ? {background:"#6baed6"} : {}}
-              >{cell.d}</button>
+              <button key={cell.iso} disabled={disabled} onClick={() => cycleDate(cell.iso)}
+                className={`grid aspect-square place-items-center rounded-lg text-[11px] font-semibold transition ${!inRange ? "bg-muted/40 text-muted-foreground/40 cursor-not-allowed" : colorOf(t)}`}
+                style={inRange && t === "working" ? {background:"#80b946"} : inRange && t === "non_working" ? {background:"#e05c5c"} : inRange && t === "college_event" ? {background:"#6baed6"} : {}}>
+                {cell.d}
+              </button>
             );
           })}
         </div>
