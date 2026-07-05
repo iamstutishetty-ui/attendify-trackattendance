@@ -999,6 +999,7 @@ const WD_NAMES = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","S
 
 function MarkWeekdayOff({ classIds, classMonths, onDone }: { classIds: string[]; classMonths: Record<string, Set<string>>; onDone: () => void }) {
   const [wd, setWd] = React.useState(0);
+  const [mode, setMode] = React.useState<"mark" | "unmark">("mark");
   const [busy, setBusy] = React.useState(false);
   const MONTH_NAMES = ["January","February","March","April","May","June","July","August","September","October","November","December"];
   async function apply() {
@@ -1020,29 +1021,49 @@ function MarkWeekdayOff({ classIds, classMonths, onDone }: { classIds: string[];
     const dates: string[] = [];
     const d = new Date(start);
     while (d <= end) { if (d.getDay() === wd) { const iso = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; dates.push(iso); } d.setDate(d.getDate() + 1); }
-    const rows = dates.flatMap((date) => {
+    // (class, date) pairs limited to each class's active academic year
+    const pairs = dates.flatMap((date) => {
       const mn = MONTH_NAMES[parseInt(date.slice(5, 7), 10) - 1];
       return classIds
         .filter((cid) => classMonths[cid]?.has(mn))
-        .map((cid) => ({ class_id: cid, date, type: "student_holiday", title: `${WD_NAMES[wd]} holiday` }));
+        .map((cid) => ({ class_id: cid, date }));
     });
-    if (rows.length === 0) { toast.error("No dates fall within any class's academic year"); setBusy(false); return; }
-    for (let i = 0; i < rows.length; i += 500) {
-      const { error } = await supabase.from("calendar_events").upsert(rows.slice(i, i + 500), { onConflict: "class_id,date" });
+    if (pairs.length === 0) { toast.error("No dates fall within any class's academic year"); setBusy(false); return; }
+    if (mode === "mark") {
+      const rows = pairs.map((p) => ({ ...p, type: "student_holiday", title: `${WD_NAMES[wd]} holiday` }));
+      for (let i = 0; i < rows.length; i += 500) {
+        const { error } = await supabase.from("calendar_events").upsert(rows.slice(i, i + 500), { onConflict: "class_id,date" });
+        if (error) { toast.error(error.message); setBusy(false); return; }
+      }
+      toast.success(`Marked all ${WD_NAMES[wd]}s as non-working`);
+    } else {
+      // Unmark: delete non_working / student_holiday rows on those weekdays for these classes.
+      const classesToClear = Array.from(new Set(pairs.map((p) => p.class_id)));
+      const datesToClear = Array.from(new Set(pairs.map((p) => p.date)));
+      const { error } = await supabase.from("calendar_events").delete()
+        .in("class_id", classesToClear)
+        .in("date", datesToClear)
+        .in("type", ["non_working", "student_holiday"]);
       if (error) { toast.error(error.message); setBusy(false); return; }
+      toast.success(`Cleared ${WD_NAMES[wd]} holidays`);
     }
-    toast.success(`Marked ${WD_NAMES[wd]}s within each class's academic year`);
     setBusy(false);
     onDone();
   }
   return (
     <Card className="mx-auto w-full max-w-sm rounded-2xl p-3 space-y-2">
-      <p className="text-xs font-semibold">Mark weekday as non-working</p>
+      <p className="text-xs font-semibold">Weekday holiday · applies only to your classes</p>
+      <div className="flex gap-1 rounded-full bg-secondary p-0.5">
+        {[{v:"mark" as const,l:"Mark holiday"},{v:"unmark" as const,l:"Remove holiday"}].map((o) => (
+          <button key={o.v} onClick={() => setMode(o.v)}
+            className={`flex-1 rounded-full py-1 text-[11px] font-semibold ${mode === o.v ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}>{o.l}</button>
+        ))}
+      </div>
       <div className="flex gap-2">
         <select value={wd} onChange={(e) => setWd(parseInt(e.target.value))} className="flex-1 rounded-md border border-input bg-background px-2 py-1.5 text-xs">
           {WD_NAMES.map((n, i) => <option key={i} value={i}>{n}</option>)}
         </select>
-        <Button size="sm" onClick={apply} disabled={busy}>{busy ? "..." : "Mark"}</Button>
+        <Button size="sm" onClick={apply} disabled={busy}>{busy ? "..." : mode === "mark" ? "Apply" : "Remove"}</Button>
       </div>
     </Card>
   );
