@@ -107,11 +107,11 @@ function useSavedClasses() {
   return { list, loaded, addClass, removeClass } as const;
 }
 
-export function AdminApp() {
+export function AdminApp({ embedded = false }: { embedded?: boolean } = {}) {
   const [tab, setTab] = React.useState<Tab>("dashboard");
   return (
-    <div className="min-h-screen bg-background pb-24">
-      <AppHeader />
+    <div className={embedded ? "pb-24" : "min-h-screen bg-background pb-24"}>
+      {!embedded && <AppHeader />}
       <main className="px-4 pt-4">
         <div key={tab} className="animate-fade-in">
           {tab === "dashboard" && <DashboardTab />}

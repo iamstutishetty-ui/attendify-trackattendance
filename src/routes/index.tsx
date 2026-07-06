@@ -6,14 +6,8 @@ import { SplashScreen } from "@/components/SplashScreen";
 import { CollegeCodeGate, isCollegeCodeVerified } from "@/components/CollegeCodeGate";
 import { Loader2 } from "lucide-react";
 
-const AdminApp = React.lazy(() =>
-  import("@/components/admin/AdminApp").then((m) => ({ default: m.AdminApp })),
-);
-const TeacherApp = React.lazy(() =>
-  import("@/components/teacher/TeacherApp").then((m) => ({ default: m.TeacherApp })),
-);
-const StudentApp = React.lazy(() =>
-  import("@/components/student/StudentApp").then((m) => ({ default: m.StudentApp })),
+const CollegeApp = React.lazy(() =>
+  import("@/components/CollegeApp").then((m) => ({ default: m.CollegeApp })),
 );
 
 export const Route = createFileRoute("/")({ component: Index });
@@ -38,10 +32,7 @@ function Index() {
 
   return (
     <React.Suspense fallback={<Spinner />}>
-      {role === "admin" && <AdminApp />}
-      {role === "teacher" && <TeacherApp />}
-      {role === "student" && <StudentApp />}
-      {!role && (
+      {role ? <CollegeApp /> : (
         <div className="grid min-h-screen place-items-center px-4 text-center">
           <Loader2 className="h-10 w-10 animate-spin text-primary" />
         </div>
