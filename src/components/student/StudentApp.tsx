@@ -34,7 +34,7 @@ export function StudentApp({ embedded = false }: { embedded?: boolean } = {}) {
         </div>
       </main>
       <nav className="fixed bottom-0 left-0 right-0 z-30 border-t border-border bg-card/95 backdrop-blur-md">
-        <div className={`mx-auto grid max-w-md grid-cols-${visibleTabs.length}`}>
+        <div className="mx-auto grid max-w-md" style={{ gridTemplateColumns: `repeat(${visibleTabs.length}, minmax(0, 1fr))` }}>
           {visibleTabs.map(({ id, label, icon: Icon }) => (
             <button key={id} onClick={() => setTab(id)}
               className={`flex flex-col items-center gap-1 py-2.5 text-[10px] transition ${tab === id ? "text-primary" : "text-muted-foreground"}`}>
