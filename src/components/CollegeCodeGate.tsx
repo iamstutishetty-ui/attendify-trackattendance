@@ -5,16 +5,11 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { GraduationCap } from "lucide-react";
 
-const STORAGE_KEY = "college_code_verified_v1";
-// Shared college code (8 chars, upper/lower/number/special).
-export const COLLEGE_CODE = "Klp@2026";
+const STORAGE_KEY = "college_code_verified_v2";
+export const COLLEGE_CODE = "mhatrecollege@badlapur2000";
 
 export function isCollegeCodeVerified(): boolean {
-  try {
-    return localStorage.getItem(STORAGE_KEY) === "1";
-  } catch {
-    return false;
-  }
+  try { return localStorage.getItem(STORAGE_KEY) === "1"; } catch { return false; }
 }
 
 export function CollegeCodeGate({ onVerified }: { onVerified: () => void }) {
@@ -27,11 +22,7 @@ export function CollegeCodeGate({ onVerified }: { onVerified: () => void }) {
       setError("Incorrect college code. Please check with your college.");
       return;
     }
-    try {
-      localStorage.setItem(STORAGE_KEY, "1");
-    } catch {
-      // ignore
-    }
+    try { localStorage.setItem(STORAGE_KEY, "1"); } catch { /* ignore */ }
     onVerified();
   };
 
@@ -43,29 +34,18 @@ export function CollegeCodeGate({ onVerified }: { onVerified: () => void }) {
             <GraduationCap className="h-7 w-7 text-primary" />
           </div>
           <CardTitle className="text-xl">Enter College Code</CardTitle>
-          <CardDescription>
-            Enter the code provided by your college to unlock the app on this device.
-          </CardDescription>
+          <CardDescription>Enter the code provided by your college to unlock the app on this device.</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={submit} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="college-code">College Code</Label>
-              <Input
-                id="college-code"
-                type="text"
-                autoComplete="off"
-                value={code}
+              <Input id="college-code" type="text" autoComplete="off" value={code}
                 onChange={(e) => { setCode(e.target.value); setError(""); }}
-                placeholder="Enter your college code"
-                autoFocus
-                className="h-11 rounded-xl"
-              />
+                placeholder="Enter your college code" autoFocus className="h-11 rounded-xl" />
               {error && <p className="text-sm text-destructive">{error}</p>}
             </div>
-            <Button type="submit" className="h-11 w-full rounded-xl">
-              Continue
-            </Button>
+            <Button type="submit" className="h-11 w-full rounded-xl">Continue</Button>
           </form>
         </CardContent>
       </Card>
