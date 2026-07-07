@@ -144,9 +144,13 @@ function CollegeDetail({ collegeId, onBack }: { collegeId: string; onBack: () =>
       if (error) { setBusy(false); return toast.error(error.message); }
       toast.success("Class updated");
     } else {
+      const { data: userRes } = await supabase.auth.getUser();
+      const uid = userRes.user?.id;
+      if (!uid) { setBusy(false); return toast.error("Not signed in"); }
       const { error } = await supabase.from("classes").insert({
         name: form.name.trim(), division: form.division.trim() || null, year: form.year.trim() || null,
         college_id: collegeId, semester: form.year.trim() || "1", academic_year: form.year.trim() || String(new Date().getFullYear()),
+        class_code: "", teacher_id: uid,
       });
       if (error) { setBusy(false); return toast.error(error.message); }
       toast.success("Class created");

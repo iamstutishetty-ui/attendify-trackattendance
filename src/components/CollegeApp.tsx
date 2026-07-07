@@ -69,7 +69,7 @@ export function CollegeApp() {
         {role === "admin"   && <AdminApp embedded />}
         {role === "teacher" && <TeacherApp embedded />}
         {role === "student" && <StudentApp embedded />}
-        {role === "parent"  && <ParentApp embedded />}
+        {(role as string) === "parent"  && <ParentApp embedded />}
       </div>
     );
   }

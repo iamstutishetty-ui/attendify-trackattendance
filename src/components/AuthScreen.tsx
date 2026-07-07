@@ -96,9 +96,9 @@ function hasSavedPassword(userIdText: string): boolean {
   return !!loadPwMap()[userIdText];
 }
 
-export function AuthScreen() {
+export function AuthScreen({ forcedRole, onBack }: { forcedRole?: AppRole; onBack?: () => void } = {}) {
   const [mode, setMode] = React.useState<"login" | "signup" | "forgot">("login");
-  const [role, setRole] = React.useState<AppRole | null>(null);
+  const [role, setRole] = React.useState<AppRole | null>(forcedRole ?? null);
   const [userId, setUserId] = React.useState("");
   const [fullName, setFullName] = React.useState("");
   const [email, setEmail] = React.useState("");
