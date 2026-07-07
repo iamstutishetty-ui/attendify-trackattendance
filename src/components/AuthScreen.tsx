@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { GraduationCap, ShieldCheck, BookOpen, Loader2, ArrowLeft, Eye, EyeOff, X, User as UserIcon } from "lucide-react";
 import { useServerFn } from "@tanstack/react-start";
 import { resetPasswordWithRecovery } from "@/lib/accounts.functions";
+import { createParentForStudent } from "@/lib/parent.functions";
 
 const roles: { value: AppRole; label: string; icon: React.ElementType; desc: string }[] = [
   { value: "admin", label: "Admin", icon: ShieldCheck, desc: "Manage college" },
@@ -96,9 +97,9 @@ function hasSavedPassword(userIdText: string): boolean {
   return !!loadPwMap()[userIdText];
 }
 
-export function AuthScreen() {
+export function AuthScreen({ forcedRole, onBack }: { forcedRole?: AppRole; onBack?: () => void } = {}) {
   const [mode, setMode] = React.useState<"login" | "signup" | "forgot">("login");
-  const [role, setRole] = React.useState<AppRole | null>(null);
+  const [role, setRole] = React.useState<AppRole | null>(forcedRole ?? null);
   const [userId, setUserId] = React.useState("");
   const [fullName, setFullName] = React.useState("");
   const [email, setEmail] = React.useState("");
@@ -110,6 +111,7 @@ export function AuthScreen() {
   const passwordRef = React.useRef<HTMLInputElement | null>(null);
   const { refresh } = useAuth();
   const resetPw = useServerFn(resetPasswordWithRecovery);
+  const createParent = useServerFn(createParentForStudent);
 
   function pickAccount(a: RememberedAccount) {
     setMode("login");
@@ -191,6 +193,10 @@ export function AuthScreen() {
           if (rErr && !rErr.message.includes("duplicate")) throw rErr;
         }
         rememberAccount({ userIdText: userId.trim().toLowerCase(), fullName: fullName.trim() });
+        if (role === "student") {
+          try { await createParent({ data: { studentFullName: fullName.trim() } }); }
+          catch (e: any) { console.error("Parent create failed:", e); }
+        }
         await refresh();
         toast.success("Account created");
       } else {
@@ -216,8 +222,13 @@ export function AuthScreen() {
 
   return (
     <div className="min-h-screen bg-background">
-      <div className="blue-gradient h-44 rounded-b-[2.5rem] px-6 pt-12 text-white">
-        <h1 className="brand-font text-4xl !text-white" style={{ background: "none", WebkitTextFillColor: "white" }}>Attendify</h1>
+      <div className="h-44 rounded-b-[2.5rem] bg-primary px-6 pt-12 text-primary-foreground">
+        {onBack && (
+          <button onClick={onBack} className="mb-2 flex items-center gap-1.5 text-sm font-medium text-primary-foreground/90">
+            <ArrowLeft className="h-4 w-4" /> Back
+          </button>
+        )}
+        <h1 className="brand-font text-3xl !text-primary-foreground" style={{ background: "none", WebkitTextFillColor: "currentColor" }}>Mhatre College</h1>
       </div>
 
       <div className="-mt-20 px-5 pb-8 space-y-4">
@@ -340,7 +351,7 @@ export function AuthScreen() {
             </div>
 
 
-            {mode === "signup" && (
+            {mode === "signup" && !forcedRole && (
               <div>
                 <Label className="mb-2 block">I am a</Label>
                 <div className="grid grid-cols-3 gap-2">

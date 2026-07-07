@@ -1,39 +1,63 @@
-## Critical bug: class code lookup
-Students can't find classes by code because RLS on `classes` only allows SELECT when the user is the teacher or already enrolled. I will add a SECURITY DEFINER function `public.join_class_by_code(code text, roll text)` that:
-- Looks up the class by `class_code` bypassing RLS
-- Confirms the caller has the `student` role
-- Inserts into `class_enrollments` for `auth.uid()` with the given roll number
-- Returns the class id/name, or raises a clear error ("Invalid class code" / "Already joined")
+# Mhatre College App — Full Restructure
 
-The student "Join class" dialog will call this RPC instead of the two-step select+insert. This fixes the "Invalid class code" error for both first-time joins and re-joins.
+Large change. Attendance internals stay untouched. Below is the complete plan; approve to implement in one pass.
 
-## 1. Auth (AuthScreen)
-- Pre-check username uniqueness in `profiles.user_id_text` before signup; show "Username already taken" toast and abort.
-- Keep password validation as-is (Supabase default min 6).
+## 1. Splash & Theme
+- Replace `SplashScreen.tsx` with the provided "Mhatre College App" markup (Alfa Slab One via `<link>` in `__root.tsx` head — never `@import` in Tailwind v4 CSS).
+- Set primary token in `src/styles.css` to Rosewood `#A65D57`; matching ring/accent shades. All buttons, gradients, gate icon inherit.
 
-## 2. Theme
-- Persist theme to `localStorage` and only change when the user toggles it. (Will check current theme code; if there's no toggle yet, this is a no-op aside from making sure nothing auto-switches.)
+## 2. College Code Gate
+- Hard-code `COLLEGE_CODE = "mhatrecollege@badlapur2000"`. Verified flag cached in `localStorage`.
 
-## 3. Admin dashboard
-- Remove auto-listing of all classes. Replace with an input: admin types a class code → fetches that one class's stats only (via a new server function `getClassByCodeForAdmin` using `supabaseAdmin` + admin role check).
-- Remove "All teachers" / "All semesters" filters.
-- Accounts section: remove delete buttons for teachers/students. Add "Delete my account" button that calls `deleteAccount({ userId: me })` (server fn updated to allow self-delete for admins only).
+## 3. Role Picker (new screen after gate, before login)
+- 4 cards: Admin, Teacher, Parent, Student. Choice stored in `sessionStorage`.
 
-## 4. Teacher
-- Profile tab: remove "Save full name" button, add "Delete account" button (self-delete via same server fn).
-- Classes: add inline rename + delete-class button (RLS already allows teacher delete).
-- Class creation: add "Split year into 2 semesters" toggle, with semester number + months pickers (single academic year shared).
-- Defaulters: add semester selector + above/below 75% toggle.
-- Calendar: remove class selector; working/non-working marks apply to ALL the teacher's classes (loop upsert across every class the teacher owns).
-- Class-code fix is shared with student via the new RPC, but teacher-side code display is already correct.
+## 4. Login screens
+- **Admin / Parent** → new `SimpleLoginScreen`: ID, Password, Forgot Password (reuses existing `resetPasswordWithRecovery`).
+- **Teacher / Student** → existing `AuthScreen` (Login + Create Account), signup forced to picked role.
+- Admin account **mhatre@admin123 / mhatre2000admin@** seeded via migration (auth.users + profile + `admin` role).
 
-## 5. Student
-- Roll number input stays in the Join dialog (already there) — teacher will not set it.
-- Join uses the new `join_class_by_code` RPC → fixes invalid-code error.
+## 5. Roles & unique IDs
+- Add `'parent'` to `app_role` enum. `profiles.user_id_text` already unique → globally unique across all roles.
 
-## Technical notes
-- New migration: `join_class_by_code` SECURITY DEFINER function + GRANT EXECUTE to authenticated; allow self-delete in `deleteAccount` server fn for admins; no schema changes to tables.
-- All UI changes are surgical to existing components (`AuthScreen.tsx`, `AdminApp.tsx`, `TeacherApp.tsx`, `StudentApp.tsx`, `accounts.functions.ts`).
-- I will NOT touch the design system, routing, or auth context beyond what's listed.
+## 6. Parent auto-creation on student signup
+- New table `student_parents { student_id PK, parent_id, parent_password_plain }`.
+- New server fn `createParentForStudent` (loads `supabaseAdmin` inside handler):
+  - Generates unique ID `parent_<8hex>`, strong password.
+  - Creates auth user, profile, `parent` role, `student_parents` row.
+- Called at end of student signup flow.
+- Student's Settings shows a "Parent Account" block: Parent ID + Password (with copy).
 
-Confirm and I'll ship it in one pass.
+## 7. Class-code split (Admin generates both)
+- Add `classes.teacher_class_code` and `classes.student_class_code` (both unique, auto-generated on insert). Keep `class_code` for compatibility (mirrors teacher code).
+- Update `join_class_by_code` → matches on `student_class_code`.
+- Add `teacher_join_class_by_code` → matches on `teacher_class_code`, assigns teacher to `classes.teacher_id` (or a join table if class already has teacher).
+
+## 8. Colleges (new)
+- New table `colleges { id, admin_id, name, photo_url }` + `classes.college_id` FK. RLS: admin owns own colleges; teachers/students/parents read colleges they are linked to via class. GRANTs included.
+- Storage bucket `college-photos` (public read) for optional photo.
+
+## 9. Admin dashboard
+Feature list (rectangular cards, top→bottom):
+1. College Management (functional)
+2. Notice · 3. Student Attendance (functional) · 4. Timetable · 5. Assignments · 6. Results · 7. Study Material · 8. Fees — others show ComingSoon.
+
+**College Management**: list colleges (create with name + optional photo, delete with confirm). Open college → list classes with fields (Name, Division, Year), actions: Edit, Promote (Year → next), Delete (confirm). Each class card shows Teacher Code + Student Code with copy buttons.
+
+## 10. Teacher / Student / Parent dashboards
+- **Teacher**: Notice, Student Attendance (functional), Timetable, Assignments, Results, Study Material.
+- **Student**: Notice, Student Attendance (functional), Timetable, Assignments, Results, Study Material, Fees.
+- **Parent**: same list as Student. Read-only. Resolves linked `student_id` via `student_parents`, then renders `StudentApp` in a read-only mode (no mark/edit buttons rendered).
+
+## 11. Header on every dashboard
+- Top-left: Light/Dark theme toggle icon.
+- Top-right: Settings gear → Sheet with User Name, User ID, Logout, Delete Account (confirm dialog → `deleteMyAccount`). Student's sheet also shows Parent Account section.
+
+## 12. Attendance
+- Untouched functionally. Remove the "Attendance Code" join UI; students join via Student Class Code (existing RPC swap in step 7). Teachers join via Teacher Class Code from a new dialog.
+
+## 13. Files touched
+- **New**: `RolePicker.tsx`, `SimpleLoginScreen.tsx`, `admin/CollegeManagement.tsx`, `parent/ParentApp.tsx`, `lib/parent.functions.ts`, `lib/colleges.functions.ts`, migration.
+- **Edited**: `SplashScreen.tsx`, `styles.css`, `routes/__root.tsx`, `CollegeCodeGate.tsx`, `routes/index.tsx`, `CollegeApp.tsx`, `AuthScreen.tsx`, `admin/AdminApp.tsx`, teacher/student join dialogs.
+
+Approve and I will execute the migration first (adds `parent` role, `colleges`, `student_parents`, code split, seeds Admin), then ship the code.

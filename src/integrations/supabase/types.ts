@@ -157,45 +157,95 @@ export type Database = {
           archived: boolean
           attendance_mode: string
           class_code: string
+          college_id: string | null
           created_at: string
           current_phase: number
+          division: string | null
           id: string
           months: string[]
           months_secondary: string[] | null
           name: string
           semester: string
           semester_secondary: string | null
+          student_class_code: string | null
+          teacher_class_code: string | null
           teacher_id: string
+          year: string | null
         }
         Insert: {
           academic_year: string
           archived?: boolean
           attendance_mode?: string
           class_code: string
+          college_id?: string | null
           created_at?: string
           current_phase?: number
+          division?: string | null
           id?: string
           months?: string[]
           months_secondary?: string[] | null
           name: string
           semester: string
           semester_secondary?: string | null
+          student_class_code?: string | null
+          teacher_class_code?: string | null
           teacher_id: string
+          year?: string | null
         }
         Update: {
           academic_year?: string
           archived?: boolean
           attendance_mode?: string
           class_code?: string
+          college_id?: string | null
           created_at?: string
           current_phase?: number
+          division?: string | null
           id?: string
           months?: string[]
           months_secondary?: string[] | null
           name?: string
           semester?: string
           semester_secondary?: string | null
+          student_class_code?: string | null
+          teacher_class_code?: string | null
           teacher_id?: string
+          year?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "classes_college_id_fkey"
+            columns: ["college_id"]
+            isOneToOne: false
+            referencedRelation: "colleges"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      colleges: {
+        Row: {
+          admin_id: string
+          created_at: string
+          id: string
+          name: string
+          photo_url: string | null
+          updated_at: string
+        }
+        Insert: {
+          admin_id: string
+          created_at?: string
+          id?: string
+          name: string
+          photo_url?: string | null
+          updated_at?: string
+        }
+        Update: {
+          admin_id?: string
+          created_at?: string
+          id?: string
+          name?: string
+          photo_url?: string | null
+          updated_at?: string
         }
         Relationships: []
       }
@@ -223,6 +273,30 @@ export type Database = {
           recovery_email?: string | null
           updated_at?: string
           user_id_text?: string
+        }
+        Relationships: []
+      }
+      student_parents: {
+        Row: {
+          created_at: string
+          parent_id: string
+          parent_password_plain: string
+          parent_user_id_text: string
+          student_id: string
+        }
+        Insert: {
+          created_at?: string
+          parent_id: string
+          parent_password_plain: string
+          parent_user_id_text: string
+          student_id: string
+        }
+        Update: {
+          created_at?: string
+          parent_id?: string
+          parent_password_plain?: string
+          parent_user_id_text?: string
+          student_id?: string
         }
         Relationships: []
       }
@@ -268,9 +342,10 @@ export type Database = {
         Args: { _code: string; _roll: string }
         Returns: string
       }
+      teacher_join_class_by_code: { Args: { _code: string }; Returns: string }
     }
     Enums: {
-      app_role: "admin" | "teacher" | "student"
+      app_role: "admin" | "teacher" | "student" | "parent"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -398,7 +473,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
-      app_role: ["admin", "teacher", "student"],
+      app_role: ["admin", "teacher", "student", "parent"],
     },
   },
 } as const
